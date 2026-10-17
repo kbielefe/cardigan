@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Cardigan</title>
+  <link rel="stylesheet" href="app.css">
+</head>
+<body>
+  <header>
+    <h1 class="brand">Cardigan</h1>
+  </header>
+  <div class="intake">
+    <div class="tabs" role="tablist" aria-label="How the pattern comes in">
+      <button type="button" role="tab" id="tab-paste" aria-controls="reading-wrap" aria-selected="true">Paste</button>
+      <button type="button" role="tab" id="tab-url" aria-controls="url-panel" aria-selected="false" tabindex="-1">URL</button>
+      <button type="button" role="tab" id="tab-file" aria-controls="file-panel" aria-selected="false" tabindex="-1">PDF or TXT</button>
+    </div>
+    <div class="control">
+      <form id="url-panel" role="tabpanel" aria-labelledby="tab-url" hidden>
+        <label class="sr" for="url">Pattern address</label>
+        <input id="url" name="url" type="url" inputmode="url" placeholder="https://" autocomplete="off" spellcheck="false">
+        <button type="submit" class="sr">Bring it in</button>
+      </form>
+      <div id="file-panel" role="tabpanel" aria-labelledby="tab-file" hidden>
+        <label class="file" for="file">
+          <span id="file-label">Choose a PDF or TXT file</span>
+          <input id="file" type="file" accept=".pdf,.txt,application/pdf,text/plain">
+        </label>
+      </div>
+    </div>
+  </div>
+  <p class="from" id="source" hidden></p>
+  <main>
+    <section class="abbr" aria-labelledby="abbr-heading">
+      <h2 id="abbr-heading">Abbreviations</h2>
+      <p id="abbr-none">None on this page. A list in the pattern would sit here. Cardigan does not add one.</p>
+      <textarea id="abbr-list" aria-label="Abbreviation list" rows="2" spellcheck="false" hidden></textarea>
+    </section>
+    <div id="reading-wrap" role="tabpanel" aria-labelledby="tab-paste">
+      <label class="sr" for="reading">Reading</label>
+      <p class="notice" id="notice" role="status" hidden></p>
+      <textarea id="reading" rows="8" placeholder="Paste the pattern." spellcheck="false"></textarea>
+    </div>
+  </main>
+  <footer>
+    <p class="settled" id="settled" hidden>This is the reading.</p>
+    <div class="actions">
+      <button type="button" class="go" id="count" disabled>Count this as the pattern</button>
+      <button type="button" class="stop" id="discard">Discard</button>
+      <button type="button" class="go" id="another" hidden>Bring in another</button>
+    </div>
+  </footer>
+  <script src="app.js"></script>
+</body>
+</html>

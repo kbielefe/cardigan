@@ -1,0 +1,322 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-10-17T19:05:52Z",
+  "title": "Design System: Cardigan",
+  "extensions": {
+    "colorMeta": {
+      "madder": {
+        "role": "primary",
+        "displayName": "Madder",
+        "canonical": "#8C2F2F",
+        "tonalRamp": [
+          "oklch(15.0% 0.0607 23.9)",
+          "oklch(26.4% 0.1069 23.9)",
+          "oklch(37.9% 0.1268 23.9)",
+          "oklch(49.3% 0.1268 23.9)",
+          "oklch(60.7% 0.1268 23.9)",
+          "oklch(72.1% 0.1268 23.9)",
+          "oklch(83.6% 0.0906 23.9)",
+          "oklch(95.0% 0.0248 23.9)"
+        ]
+      },
+      "madder-deep": {
+        "role": "primary",
+        "displayName": "Madder Deep",
+        "canonical": "#6F2424",
+        "tonalRamp": [
+          "oklch(15.0% 0.0607 23.8)",
+          "oklch(26.4% 0.1066 23.8)",
+          "oklch(37.9% 0.1066 23.8)",
+          "oklch(49.3% 0.1066 23.8)",
+          "oklch(60.7% 0.1066 23.8)",
+          "oklch(72.1% 0.1066 23.8)",
+          "oklch(83.6% 0.0906 23.8)",
+          "oklch(95.0% 0.0248 23.8)"
+        ]
+      },
+      "paper": {
+        "role": "neutral",
+        "displayName": "Paper",
+        "canonical": "#F7F4EE",
+        "tonalRamp": [
+          "oklch(15.0% 0.0086 84.6)",
+          "oklch(26.4% 0.0086 84.6)",
+          "oklch(37.9% 0.0086 84.6)",
+          "oklch(49.3% 0.0086 84.6)",
+          "oklch(60.7% 0.0086 84.6)",
+          "oklch(72.1% 0.0086 84.6)",
+          "oklch(83.6% 0.0086 84.6)",
+          "oklch(95.0% 0.0086 84.6)"
+        ]
+      },
+      "ink": {
+        "role": "neutral",
+        "displayName": "Ink",
+        "canonical": "#1C1C1C",
+        "tonalRamp": [
+          "oklch(15.0% 0.0000 0.0)",
+          "oklch(26.4% 0.0000 0.0)",
+          "oklch(37.9% 0.0000 0.0)",
+          "oklch(49.3% 0.0000 0.0)",
+          "oklch(60.7% 0.0000 0.0)",
+          "oklch(72.1% 0.0000 0.0)",
+          "oklch(83.6% 0.0000 0.0)",
+          "oklch(95.0% 0.0000 0.0)"
+        ]
+      },
+      "inset": {
+        "role": "neutral",
+        "displayName": "Inset",
+        "canonical": "#F3E6E4",
+        "tonalRamp": [
+          "oklch(15.0% 0.0145 28.0)",
+          "oklch(26.4% 0.0145 28.0)",
+          "oklch(37.9% 0.0145 28.0)",
+          "oklch(49.3% 0.0145 28.0)",
+          "oklch(60.7% 0.0145 28.0)",
+          "oklch(72.1% 0.0145 28.0)",
+          "oklch(83.6% 0.0145 28.0)",
+          "oklch(95.0% 0.0145 28.0)"
+        ]
+      },
+      "rule": {
+        "role": "neutral",
+        "displayName": "Rule",
+        "canonical": "#D9D0C4",
+        "tonalRamp": [
+          "oklch(15.0% 0.0192 75.3)",
+          "oklch(26.4% 0.0192 75.3)",
+          "oklch(37.9% 0.0192 75.3)",
+          "oklch(49.3% 0.0192 75.3)",
+          "oklch(60.7% 0.0192 75.3)",
+          "oklch(72.1% 0.0192 75.3)",
+          "oklch(83.6% 0.0192 75.3)",
+          "oklch(95.0% 0.0192 75.3)"
+        ]
+      },
+      "quiet": {
+        "role": "neutral",
+        "displayName": "Quiet",
+        "canonical": "#5C534A",
+        "tonalRamp": [
+          "oklch(15.0% 0.0186 67.3)",
+          "oklch(26.4% 0.0186 67.3)",
+          "oklch(37.9% 0.0186 67.3)",
+          "oklch(49.3% 0.0186 67.3)",
+          "oklch(60.7% 0.0186 67.3)",
+          "oklch(72.1% 0.0186 67.3)",
+          "oklch(83.6% 0.0186 67.3)",
+          "oklch(95.0% 0.0186 67.3)"
+        ]
+      },
+      "field": {
+        "role": "neutral",
+        "displayName": "Field",
+        "canonical": "#fff",
+        "tonalRamp": [
+          "oklch(15.0% 0.0000 0.0)",
+          "oklch(26.4% 0.0000 0.0)",
+          "oklch(37.9% 0.0000 0.0)",
+          "oklch(49.3% 0.0000 0.0)",
+          "oklch(60.7% 0.0000 0.0)",
+          "oklch(72.1% 0.0000 0.0)",
+          "oklch(83.6% 0.0000 0.0)",
+          "oklch(95.0% 0.0000 0.0)"
+        ]
+      },
+      "selection": {
+        "role": "neutral",
+        "displayName": "Madder Blush",
+        "canonical": "#E7C9C4",
+        "tonalRamp": [
+          "oklch(15.0% 0.0347 29.0)",
+          "oklch(26.4% 0.0347 29.0)",
+          "oklch(37.9% 0.0347 29.0)",
+          "oklch(49.3% 0.0347 29.0)",
+          "oklch(60.7% 0.0347 29.0)",
+          "oklch(72.1% 0.0347 29.0)",
+          "oklch(83.6% 0.0347 29.0)",
+          "oklch(95.0% 0.0250 29.0)"
+        ]
+      }
+    },
+    "typographyMeta": {
+      "brand": {
+        "displayName": "Brand",
+        "purpose": "The word Cardigan in the bar, in paper, sentence case. 650 is the declared weight, between semibold and bold."
+      },
+      "headline": {
+        "displayName": "Headline",
+        "purpose": "The abbreviations heading, and only that heading."
+      },
+      "body": {
+        "displayName": "Body",
+        "purpose": "The page default, the reading, and the abbreviation list once it is present."
+      },
+      "note": {
+        "displayName": "Note",
+        "purpose": "The empty abbreviations sentence, and the confirmation that the reading is settled."
+      },
+      "action": {
+        "displayName": "Action",
+        "purpose": "The footer actions."
+      },
+      "label": {
+        "displayName": "Label",
+        "purpose": "Tabs, the address field, and the file control. The source line is this size at line-height 1.4, in quiet."
+      }
+    },
+    "shadows": [],
+    "motion": [
+      {
+        "name": "none",
+        "value": "none",
+        "purpose": "State changes are instant. The stylesheet sets no duration, easing, or transition."
+      }
+    ],
+    "breakpoints": [
+      {
+        "name": "compact",
+        "value": "720px"
+      }
+    ]
+  },
+  "components": [
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "Filled madder action. Hover darkens to madder-deep; disabled stays madder at 40% opacity.",
+      "html": "<button class=\"ds-btn-primary\" type=\"button\">Count this as the pattern</button>",
+      "css": ".ds-btn-primary { font: 600 16px/1 system-ui, sans-serif; padding: 12px 18px; border: 1px solid #8C2F2F; border-radius: 0; background: #8C2F2F; color: #F7F4EE; cursor: pointer; } .ds-btn-primary:hover { background: #6F2424; } .ds-btn-primary:focus { outline: none; } .ds-btn-primary:focus-visible { outline: 2px solid #8C2F2F; outline-offset: 2px; } .ds-btn-primary:disabled { opacity: 0.4; cursor: not-allowed; } .ds-btn-primary:disabled:hover { background: #8C2F2F; }"
+    },
+    {
+      "name": "Quiet Button",
+      "kind": "button",
+      "refersTo": "button-quiet",
+      "description": "Madder text on a transparent ground, same edge and padding as the primary action. Hover fills inset.",
+      "html": "<button class=\"ds-btn-quiet\" type=\"button\">Discard</button>",
+      "css": ".ds-btn-quiet { font: 600 16px/1 system-ui, sans-serif; padding: 12px 18px; border: 1px solid #8C2F2F; border-radius: 0; background: transparent; color: #8C2F2F; cursor: pointer; } .ds-btn-quiet:hover { background: #F3E6E4; } .ds-btn-quiet:focus { outline: none; } .ds-btn-quiet:focus-visible { outline: 2px solid #8C2F2F; outline-offset: 2px; } .ds-btn-quiet:disabled { opacity: 0.4; cursor: not-allowed; } .ds-btn-quiet:disabled:hover { background: transparent; }"
+    },
+    {
+      "name": "Tabs",
+      "kind": "nav",
+      "refersTo": "tab",
+      "description": "A joined madder rectangle. The selected tab fills madder; an unselected tab hovers to inset.",
+      "html": "<div class=\"ds-tabs\" role=\"tablist\" aria-label=\"How the pattern comes in\"><button class=\"ds-tab\" type=\"button\" aria-selected=\"true\">Paste</button><button class=\"ds-tab\" type=\"button\" aria-selected=\"false\">URL</button><button class=\"ds-tab\" type=\"button\" aria-selected=\"false\">PDF or TXT</button></div>",
+      "css": ".ds-tabs { display: flex; border: 1px solid #8C2F2F; border-radius: 0; } .ds-tab { padding: 8px 14px; border: 0; border-radius: 0; background: transparent; color: #8C2F2F; font: 14px/1.2 system-ui, sans-serif; cursor: pointer; } .ds-tab[aria-selected=\"true\"] { background: #8C2F2F; color: #F7F4EE; } .ds-tab:hover:not([aria-selected=\"true\"]) { background: #F3E6E4; } .ds-tab:focus { outline: none; } .ds-tab:focus-visible { outline: 2px solid #8C2F2F; outline-offset: 2px; }"
+    },
+    {
+      "name": "Address Field",
+      "kind": "input",
+      "refersTo": "field",
+      "description": "White field with a tan rule, quiet placeholder, and a madder caret.",
+      "html": "<input class=\"ds-field\" type=\"url\" placeholder=\"https://\">",
+      "css": ".ds-field { width: 100%; border: 1px solid #D9D0C4; border-radius: 0; background: #fff; color: #1C1C1C; font: 14px/1.2 system-ui, sans-serif; padding: 8px 12px; caret-color: #8C2F2F; } .ds-field::placeholder { color: #5C534A; opacity: 1; } .ds-field:focus { outline: none; } .ds-field:focus-visible { outline: 2px solid #8C2F2F; outline-offset: 2px; }"
+    },
+    {
+      "name": "File Control",
+      "kind": "input",
+      "refersTo": "file",
+      "description": "Quiet label on a white field with a tan rule, at least 38px tall.",
+      "html": "<label class=\"ds-file\" tabindex=\"0\">Choose a PDF or TXT file</label>",
+      "css": ".ds-file { display: flex; align-items: center; min-height: 38px; border: 1px solid #D9D0C4; border-radius: 0; background: #fff; padding: 8px 12px; font: 14px/1.2 system-ui, sans-serif; color: #5C534A; cursor: pointer; } .ds-file:focus { outline: none; } .ds-file:focus-visible, .ds-file:focus-within { outline: 2px solid #8C2F2F; outline-offset: 2px; }"
+    },
+    {
+      "name": "Abbreviations Box",
+      "kind": "custom",
+      "refersTo": "abbreviations",
+      "description": "The signature: inset ground, 2px madder border, tracked uppercase heading.",
+      "html": "<section class=\"ds-abbr\"><h2 class=\"ds-abbr-title\">Abbreviations</h2><p class=\"ds-abbr-empty\">None on this page. A list in the pattern would sit here. Cardigan does not add one.</p></section>",
+      "css": ".ds-abbr { max-width: 740px; background: #F3E6E4; border: 2px solid #8C2F2F; border-radius: 0; padding: 16px 18px 18px; color: #1C1C1C; font-family: system-ui, sans-serif; } .ds-abbr-title { margin: 0 0 8px; font-size: 24px; font-weight: 700; letter-spacing: 0.04em; line-height: 1.2; text-transform: uppercase; } .ds-abbr-empty { margin: 0; max-width: 62ch; font-size: 16px; font-weight: 400; line-height: 1.4; }"
+    },
+    {
+      "name": "Reading",
+      "kind": "input",
+      "refersTo": "reading",
+      "description": "Borderless reading on the paper, body size, measure 68ch, madder caret.",
+      "html": "<textarea class=\"ds-reading\" rows=\"8\" placeholder=\"Paste the pattern.\"></textarea>",
+      "css": ".ds-reading { display: block; width: 100%; max-width: 68ch; margin: 0; padding: 0; border: 0; border-radius: 0; background: transparent; color: #1C1C1C; font: 18px/1.45 system-ui, sans-serif; caret-color: #8C2F2F; resize: none; } .ds-reading::placeholder { color: #5C534A; opacity: 1; } .ds-reading:focus { outline: none; } .ds-reading:focus-visible { outline: 2px solid #8C2F2F; outline-offset: 2px; }"
+    },
+    {
+      "name": "Bar",
+      "kind": "custom",
+      "refersTo": "bar",
+      "description": "64px madder band with the sentence-case wordmark in paper. No links and no icons.",
+      "html": "<header class=\"ds-bar\"><h1 class=\"ds-brand\">Cardigan</h1></header>",
+      "css": ".ds-bar { height: 64px; display: flex; align-items: center; padding: 0 32px; background: #8C2F2F; color: #F7F4EE; border-radius: 0; } .ds-brand { margin: 0; font-family: system-ui, sans-serif; font-size: 22px; font-weight: 650; line-height: 1; }"
+    }
+  ],
+  "narrative": {
+    "northStar": "Pattern leaflet",
+    "overview": "Cardigan's first visual system is a pattern leaflet: warm paper, a madder bar, and one ruled box for the abbreviations. It is read beside the machine, so the sheet is flat, square, and immediate. Nothing lifts, nothing rounds, and nothing moves.\n\nThe madder rectangle is the form. The bar is a solid one. The tabs and the actions are thin ones, edged with a 1px madder rule. The abbreviations box is the thick one, a 2px rule on the inset ground, and it is the signature. The reading is not a rectangle of chrome. It sits on the paper in the body size, under the glossary, the way a leaflet sets the instructions after the abbreviations.\n\nThis surface ships the platform sans (system-ui, sans-serif), because the leaflet brief asked for the face the browser already has. That stack is a fact of this page. It is not the typeface every future Cardigan surface must use. The page has no logo, no imagery, and no motion.",
+    "keyCharacteristics": [
+      "Warm paper, ink, and a single madder accent",
+      "Square rectangles and 1px or 2px rules, with no shadow",
+      "The abbreviations box as the signature",
+      "A full-height column with a fixed bar and a scrolling reading",
+      "Platform sans on this surface, with no motion and no imagery"
+    ],
+    "rules": [
+      {
+        "name": "The Madder Rule",
+        "body": "Madder is the only accent. It paints the bar, the selected tab, the primary action, the abbreviations rule, the focus ring, the caret, and the scrollbar. Body text stays ink.",
+        "section": "colors"
+      },
+      {
+        "name": "The Wash Rule",
+        "body": "Hover on an unselected tab or the quiet action fills with inset. Only the primary action darkens, to madder-deep. Text selection uses the blush wash, with ink left as the text color.",
+        "section": "colors"
+      },
+      {
+        "name": "The Tracked Heading Rule",
+        "body": "Uppercase and opened letter-spacing belong only to the abbreviations heading. The brand word stays in sentence case.",
+        "section": "typography"
+      },
+      {
+        "name": "The Measure Rule",
+        "body": "The reading and notices stop at 68ch. Copy inside the abbreviations box stops at 62ch.",
+        "section": "typography"
+      },
+      {
+        "name": "The Fixed Bar Rule",
+        "body": "The bar, the intake, and the footer stay fixed. Only the reading region scrolls.",
+        "section": "layout"
+      },
+      {
+        "name": "The Gutter Rule",
+        "body": "The page gutter is 32px, and 16px at the 720px breakpoint. Line length is held by the measure, not by a centered sheet.",
+        "section": "layout"
+      },
+      {
+        "name": "The Flat Rule",
+        "body": "Nothing casts a shadow, at rest or on hover. A state change is a new fill, or the 2px madder focus ring offset by 2px.",
+        "section": "elevation"
+      },
+      {
+        "name": "The Square Rule",
+        "body": "Corners are square (0). Do not round the bar, the boxes, the tabs, the fields, or the actions.",
+        "section": "shapes"
+      },
+      {
+        "name": "The Two Actions Rule",
+        "body": "The primary action is a madder rectangle with paper text. The quiet action is madder text on a transparent ground. Both share the 1px madder edge, the action type, and 12px 18px padding.",
+        "section": "components"
+      }
+    ],
+    "dos": [
+      "**Do** keep madder as the only accent and paper as the ground.",
+      "**Do** put the abbreviations in the inset box with a 2px madder border.",
+      "**Do** leave the reading on the paper, unboxed, at the body size, within 68ch.",
+      "**Do** use a 2px madder focus ring, offset 2px, and only on focus-visible.",
+      "**Do** stay square (0) and flat, and drop the gutter from 32px to 16px at 720px."
+    ],
+    "donts": [
+      "**Don't** add a shadow, a blur, or a second accent.",
+      "**Don't** round the bar, the abbreviations box, the tabs, the fields, or the actions.",
+      "**Don't** box the reading, or give it the field's white fill and tan rule.",
+      "**Don't** animate state changes. This surface has no transition.",
+      "**Don't** treat the platform sans as the face every future Cardigan surface must use. It is the face this leaflet ships."
+    ]
+  }
+}
