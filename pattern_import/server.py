@@ -18,7 +18,6 @@ from pattern_import.extract import (
     Result,
     extract_bytes,
     fetch_url,
-    split_text,
 )
 
 STATIC = Path(__file__).resolve().parent / "static"
@@ -52,9 +51,6 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/fetch":
             self._json(self._fetch(body).as_dict())
             return
-        if path == "/split":
-            self._json(self._split(body).as_dict())
-            return
         if path == "/file":
             name = unquote(self.headers.get("X-Filename", "file"))
             kind = self.headers.get("Content-Type", "")
@@ -71,16 +67,6 @@ class Handler(BaseHTTPRequestHandler):
         if not isinstance(url, str):
             return Result(ok=False, code="fetch", message=MSG_FETCH)
         return fetch_url(url)
-
-    def _split(self, body: bytes) -> Result:
-        try:
-            payload = json.loads(body)
-            text = payload["text"]
-        except (json.JSONDecodeError, KeyError, TypeError):
-            return Result(ok=False, code="fetch", message=MSG_FETCH)
-        if not isinstance(text, str):
-            return Result(ok=False, code="fetch", message=MSG_FETCH)
-        return split_text(text)
 
     def _json(self, payload: dict, status: int = 200):
         self._bytes(json.dumps(payload).encode("utf-8"), "application/json; charset=utf-8", status)

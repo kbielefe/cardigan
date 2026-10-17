@@ -1,7 +1,7 @@
-"""Turn a paste, a page, a PDF, or a TXT file into the pattern's words.
+"""Turn a page, a PDF, or a TXT file into the pattern's words.
 
-The glossary is split out only when those words already carry a heading
-Abbreviations, Abbreviation, or Glossary. Nothing here is resolved into passes.
+A glossary stays in the reading with the rest of the pattern. Nothing here
+is resolved into passes.
 """
 
 from __future__ import annotations
@@ -16,10 +16,6 @@ from urllib.error import URLError
 from urllib.parse import urlparse
 from urllib.request import Request, urlopen
 
-NONE_SENTENCE = (
-    "None on this page. A list in the pattern would sit here. "
-    "Cardigan does not add one."
-)
 IMAGE_LINE = "Pictures on this page were left out."
 MSG_FETCH = "This address did not come back. Check it, or paste the pattern."
 MSG_URL_TYPE = "Cardigan takes a page, a PDF, or a TXT file."
@@ -31,7 +27,6 @@ MSG_SCAN = (
 
 MAX_BYTES = 20 * 1024 * 1024
 FETCH_TIMEOUT = 20
-GLOSSARY = {"abbreviations", "abbreviation", "glossary"}
 CHROME_HEADINGS = {
     "latest posts",
     "you may also like",
@@ -96,14 +91,10 @@ VOID_TAGS = {
     "track",
     "wbr",
 }
-DEF_LINE = re.compile(r"^[A-Za-z][A-Za-z0-9./+]*\s*(?:=|–|—|-|:)\s+\S")
-
-
 @dataclass
 class Result:
     ok: bool
     reading: str = ""
-    abbreviations: str | None = None
     images_omitted: bool = False
     source: str = ""
     code: str = ""
@@ -115,7 +106,6 @@ class Result:
         return {
             "ok": True,
             "reading": self.reading,
-            "abbreviations": self.abbreviations,
             "imagesOmitted": self.images_omitted,
             "source": self.source,
         }
@@ -244,11 +234,9 @@ def _section_label(el: El) -> tuple[str | None, str]:
         label = clean(_text(nodes[0]))
         nxt = nodes[1] if len(nodes) > 1 else None
         followed_by_break = isinstance(nxt, El) and nxt.tag == "br"
-        if norm_heading(label) in GLOSSARY or (followed_by_break and len(label) <= 60 and "." not in label):
-            rest = clean(_render(nodes[2:] if followed_by_break else nodes[1:]))
+        if followed_by_break and len(label) <= 60 and "." not in label:
+            rest = clean(_render(nodes[2:]))
             return label, rest
-    if "\n" not in full and norm_heading(full) in GLOSSARY:
-        return full, ""
     return None, full
 
 
@@ -314,7 +302,7 @@ def _count_images(el: El) -> int:
     return count
 
 
-def html_to_reading(markup: str) -> tuple[str, str | None, bool]:
+def html_to_reading(markup: str) -> tuple[str, bool]:
     parser = _Tree()
     parser.feed(markup)
     parser.close()
@@ -347,11 +335,7 @@ def html_to_reading(markup: str) -> tuple[str, str | None, bool]:
     push()
 
     reading_parts: list[str] = []
-    abbreviations: str | None = None
     for label, lines in sections:
-        if label is not None and norm_heading(label) in GLOSSARY and abbreviations is None:
-            abbreviations = "\n".join(lines).strip()
-            continue
         if label:
             reading_parts.append(label)
         reading_parts.extend(lines)
@@ -364,43 +348,12 @@ def html_to_reading(markup: str) -> tuple[str, str | None, bool]:
         reading = f"{title}\n\n{reading}" if reading else title
     if images and reading:
         reading = f"{reading.rstrip()}\n\n{IMAGE_LINE}"
-    return reading.strip(), abbreviations, images
+    return reading.strip(), images
 
 
-def split_plain(text: str) -> tuple[str, str | None]:
+def plain_reading(text: str) -> str:
     raw = text.replace("\r\n", "\n").replace("\r", "\n").replace("\f", "\n")
-    lines = raw.split("\n")
-    heading_at = None
-    for index, line in enumerate(lines):
-        if norm_heading(line) in GLOSSARY:
-            heading_at = index
-            break
-    if heading_at is None:
-        return raw.strip(), None
-
-    before = lines[:heading_at]
-    after = lines[heading_at + 1 :]
-    abbreviation_lines: list[str] = []
-    rest_at = 0
-    saw_blank = False
-    for index, line in enumerate(after):
-        stripped = re.sub(r"[ \t]+", " ", line).strip()
-        if stripped == "":
-            saw_blank = True
-            continue
-        if DEF_LINE.match(stripped) or (abbreviation_lines and not saw_blank):
-            abbreviation_lines.append(stripped)
-            saw_blank = False
-            rest_at = index + 1
-            continue
-        rest_at = index
-        break
-    else:
-        rest_at = len(after)
-
-    reading = "\n".join(before + after[rest_at:])
-    reading = re.sub(r"\n{3,}", "\n\n", reading).strip()
-    return reading, "\n".join(abbreviation_lines).strip()
+    return raw.strip()
 
 
 def _has_letters(text: str) -> bool:
@@ -435,13 +388,12 @@ def from_pdf(data: bytes, source: str) -> Result:
     text, images = _pdf_parts(data)
     if not _has_letters(text):
         return Result(ok=False, code="empty-pdf", message=MSG_SCAN)
-    reading, abbreviations = split_plain(text)
+    reading = plain_reading(text)
     if images and reading:
         reading = f"{reading.rstrip()}\n\n{IMAGE_LINE}"
     return Result(
         ok=True,
         reading=reading,
-        abbreviations=abbreviations,
         images_omitted=images,
         source=source,
     )
@@ -449,11 +401,10 @@ def from_pdf(data: bytes, source: str) -> Result:
 
 def from_html(data: bytes, source: str) -> Result:
     markup = data.decode("utf-8-sig", errors="replace")
-    reading, abbreviations, images = html_to_reading(markup)
+    reading, images = html_to_reading(markup)
     return Result(
         ok=True,
         reading=reading,
-        abbreviations=abbreviations,
         images_omitted=images,
         source=source,
     )
@@ -461,13 +412,7 @@ def from_html(data: bytes, source: str) -> Result:
 
 def from_text(data: bytes, source: str) -> Result:
     text = data.decode("utf-8-sig", errors="replace")
-    reading, abbreviations = split_plain(text)
-    return Result(ok=True, reading=reading, abbreviations=abbreviations, source=source)
-
-
-def split_text(text: str) -> Result:
-    reading, abbreviations = split_plain(text)
-    return Result(ok=True, reading=reading, abbreviations=abbreviations, source="Pasted")
+    return Result(ok=True, reading=plain_reading(text), source=source)
 
 
 def source_from_url(url: str) -> str:

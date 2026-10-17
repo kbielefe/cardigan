@@ -154,31 +154,6 @@ main {
   scrollbar-color: var(--madder) var(--paper);
 }
 
-.abbr {
-  max-width: 740px;
-  background: var(--inset);
-  border: 2px solid var(--madder);
-  padding: 16px 18px 18px;
-  margin: 0 0 18px;
-}
-
-.abbr h2 {
-  margin: 0 0 8px;
-  font-size: 24px;
-  font-weight: 700;
-  letter-spacing: 0.04em;
-  line-height: 1.2;
-  text-transform: uppercase;
-}
-
-.abbr p,
-.abbr textarea {
-  margin: 0;
-  max-width: 62ch;
-  font-size: 16px;
-  line-height: 1.4;
-}
-
 #reading-wrap textarea {
   display: block;
   width: 100%;
@@ -190,20 +165,6 @@ main {
   color: inherit;
   font: inherit;
   line-height: 1.45;
-  resize: none;
-  overflow: hidden;
-  caret-color: var(--madder);
-  overflow-wrap: break-word;
-}
-
-.abbr textarea {
-  display: block;
-  width: 100%;
-  padding: 0;
-  border: 0;
-  background: transparent;
-  color: inherit;
-  font: inherit;
   resize: none;
   overflow: hidden;
   caret-color: var(--madder);

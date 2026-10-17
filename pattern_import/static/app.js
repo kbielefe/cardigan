@@ -1,4 +1,3 @@
-const NONE = "None on this page. A list in the pattern would sit here. Cardigan does not add one.";
 const FETCH_FAILED = "This address did not come back. Check it, or paste the pattern.";
 
 const tabs = [...document.querySelectorAll("[role='tab']")];
@@ -6,8 +5,6 @@ const urlPanel = document.getElementById("url-panel");
 const filePanel = document.getElementById("file-panel");
 const control = document.querySelector(".control");
 const source = document.getElementById("source");
-const none = document.getElementById("abbr-none");
-const list = document.getElementById("abbr-list");
 const readingWrap = document.getElementById("reading-wrap");
 const notice = document.getElementById("notice");
 const reading = document.getElementById("reading");
@@ -21,8 +18,6 @@ const fileLabel = document.getElementById("file-label");
 
 let tab = "paste";
 let phase = "empty";
-let hasList = false;
-let splitDone = false;
 let token = 0;
 
 tabs.forEach((button, index) => {
@@ -86,22 +81,8 @@ reading.addEventListener("input", () => {
   if (phase === "empty" || phase === "failed") {
     phase = reading.value.trim() ? "ready" : "empty";
     source.textContent = phase === "ready" ? "Pasted" : "";
-    if (phase === "empty") splitDone = false;
   }
   render();
-});
-
-reading.addEventListener("paste", () => {
-  const fresh = reading.value.trim() === "" || phase === "empty" || phase === "failed";
-  if (!fresh) return;
-  splitDone = false;
-  setTimeout(() => {
-    if (!splitDone) landPaste();
-  }, 0);
-});
-
-reading.addEventListener("blur", () => {
-  if (!splitDone && phase === "ready" && tab === "paste") landPaste();
 });
 
 count.addEventListener("click", () => {
@@ -114,12 +95,12 @@ discard.addEventListener("click", reset);
 another.addEventListener("click", reset);
 
 function wordsIn() {
-  return reading.value.trim() !== "" || (hasList && list.value.trim() !== "");
+  return reading.value.trim() !== "";
 }
 
 function fit(area) {
   const lines = area.value ? area.value.split("\n").length : 1;
-  area.rows = Math.max(area === reading ? 8 : 2, lines);
+  area.rows = Math.max(8, lines);
   area.style.height = "auto";
   const floor = area.getBoundingClientRect().height;
   area.style.height = `${Math.max(floor, area.scrollHeight)}px`;
@@ -130,55 +111,16 @@ function fit(area) {
 
 window.addEventListener("resize", () => {
   if (!reading.hidden) fit(reading);
-  if (!list.hidden) fit(list);
 });
-
-function showList(value) {
-  if (value == null) {
-    hasList = false;
-    list.value = "";
-  } else {
-    hasList = true;
-    list.value = value;
-  }
-}
 
 function sheet() {
   render();
   if (!reading.hidden) fit(reading);
-  if (!list.hidden) fit(list);
-}
-
-async function landPaste() {
-  const text = reading.value;
-  if (!text.trim()) return;
-  const mine = ++token;
-  let payload;
-  try {
-    const response = await fetch("/split", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ text }),
-    });
-    payload = await response.json();
-  } catch {
-    return;
-  }
-  if (mine !== token || reading.value !== text || !payload.ok) return;
-  splitDone = true;
-  reading.value = payload.reading;
-  showList(payload.abbreviations);
-  phase = wordsIn() ? "ready" : "empty";
-  if (phase === "ready") source.textContent = "Pasted";
-  sheet();
 }
 
 async function begin(run) {
   const mine = ++token;
   phase = "working";
-  splitDone = true;
-  hasList = false;
-  list.value = "";
   reading.value = "";
   source.textContent = "";
   notice.textContent = "Reading it…";
@@ -199,7 +141,6 @@ async function begin(run) {
   phase = "ready";
   source.textContent = payload.source || "";
   reading.value = payload.reading || "";
-  showList(payload.abbreviations);
   sheet();
 }
 
@@ -207,12 +148,9 @@ function reset() {
   token += 1;
   tab = "paste";
   phase = "empty";
-  hasList = false;
-  splitDone = false;
   source.textContent = "";
   notice.textContent = "";
   reading.value = "";
-  list.value = "";
   urlInput.value = "";
   fileInput.value = "";
   fileLabel.textContent = "Choose a PDF or TXT file";
@@ -240,10 +178,6 @@ function render() {
   }
 
   source.hidden = source.textContent.trim() === "";
-  none.hidden = hasList;
-  none.textContent = NONE;
-  list.hidden = !hasList;
-  list.readOnly = phase === "counted";
 
   const showNotice = phase === "working" || phase === "failed";
   notice.hidden = !showNotice;

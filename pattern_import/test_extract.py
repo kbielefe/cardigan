@@ -7,6 +7,8 @@ import threading
 import unittest
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from urllib.error import HTTPError
+from urllib.request import Request, urlopen
 
 from pattern_import.extract import (
     IMAGE_LINE,
@@ -18,7 +20,6 @@ from pattern_import.extract import (
     fetch_url,
     html_to_reading,
     source_from_url,
-    split_text,
 )
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -31,10 +32,9 @@ def _read(relative: str) -> str:
 
 class HtmlTests(unittest.TestCase):
     def test_creative_tien_keeps_the_instructions_and_drops_chrome(self):
-        reading, abbreviations, images = html_to_reading(
+        reading, images = html_to_reading(
             _read("patterns/creative-tien-lk150-tuck-blanket.html")
         )
-        self.assertIsNone(abbreviations)
         self.assertTrue(images)
         self.assertIn(IMAGE_LINE, reading)
         self.assertIn("Tuck stitch blanket on an LK150", reading)
@@ -45,31 +45,31 @@ class HtmlTests(unittest.TestCase):
         self.assertNotIn("How to machine knit a heart shape", reading)
         self.assertNotIn("Leave a Reply", reading)
 
-    def test_city_farmhouse_glossary_is_the_list(self):
-        reading, abbreviations, images = html_to_reading(
+    def test_city_farmhouse_glossary_stays_in_the_reading(self):
+        reading, images = html_to_reading(
             _read("patterns/city-farmhouse-wrap-sweater-scarf.html")
         )
         self.assertTrue(images)
         self.assertIn(IMAGE_LINE, reading)
-        self.assertEqual(abbreviations, "RC = row count\nSts = stitches")
-        self.assertNotIn("RC = row count", reading)
+        self.assertIn("Glossary", reading)
+        self.assertIn("RC = row count", reading)
+        self.assertIn("Sts = stitches", reading)
         self.assertIn("ewrap cast on", reading)
         self.assertIn("Machine Knit Wrap Sweater Scarf Pattern", reading)
         self.assertNotIn("Very nice and elegant", reading)
         self.assertNotIn("Polly", reading)
 
     def test_clearwater_long_heading_stays_in_the_reading(self):
-        reading, abbreviations, images = html_to_reading(
+        reading, _images = html_to_reading(
             _read("references/clearwater-abbreviations.html")
         )
-        self.assertIsNone(abbreviations)
         self.assertIn("Machine Knitting Abbreviations and Terms", reading)
         self.assertIn("alternate", reading)
         self.assertNotIn("Home", reading.split("Machine Knitting", 1)[0])
 
 
 class PlainTests(unittest.TestCase):
-    def test_paste_splits_a_glossary_heading_once(self):
+    def test_txt_keeps_a_glossary_in_the_reading(self):
         text = (
             "Machine Knit Wrap Sweater Scarf Pattern\n\n"
             "Glossary\n"
@@ -78,19 +78,21 @@ class PlainTests(unittest.TestCase):
             "Notes\n"
             "Instructions are written for hand manipulation of the stitches in the body.\n"
         )
-        result = split_text(text)
+        result = extract_bytes(text.encode(), "wrap.txt", "text/plain")
         self.assertTrue(result.ok)
-        self.assertEqual(result.source, "Pasted")
-        self.assertEqual(result.abbreviations, "RC = row count\nSts = stitches")
+        self.assertEqual(result.source, "From wrap.txt")
+        self.assertNotIn("abbreviations", result.as_dict())
+        self.assertIn("Glossary", result.reading)
+        self.assertIn("RC = row count", result.reading)
+        self.assertIn("Sts = stitches", result.reading)
         self.assertIn("hand manipulation", result.reading)
-        self.assertNotIn("RC = row count", result.reading)
         self.assertIn("Notes", result.reading)
 
-    def test_paste_without_a_heading_is_the_reading(self):
+    def test_txt_without_a_heading_is_the_reading(self):
         text = "Change the Russell lever to I, so the D-position needles will not be knitted."
-        result = split_text(text)
-        self.assertIsNone(result.abbreviations)
+        result = extract_bytes(text.encode(), "lever.txt", "text/plain")
         self.assertEqual(result.reading, text)
+        self.assertEqual(result.source, "From lever.txt")
 
     def test_txt_round_trip_and_refused_types(self):
         body = b"Knit 2 rows.\n"
@@ -176,7 +178,10 @@ class FetchTests(unittest.TestCase):
             self.assertEqual(fetched.source, f"From 127.0.0.1:{port}/pattern.pdf")
             html = fetch_url(f"http://127.0.0.1:{port}/pattern.html")
             self.assertTrue(html.ok, html.message)
-            self.assertEqual(html.abbreviations, "RC = row count\nSts = stitches")
+            self.assertNotIn("abbreviations", html.as_dict())
+            self.assertIn("Glossary", html.reading)
+            self.assertIn("RC = row count", html.reading)
+            self.assertIn("Sts = stitches", html.reading)
             self.assertIn("hand manipulation", html.reading)
             self.assertIn(IMAGE_LINE, html.reading)
             refused = fetch_url(f"http://127.0.0.1:{port}/photo.png")
@@ -188,9 +193,7 @@ class FetchTests(unittest.TestCase):
 
 
 class ServerTests(unittest.TestCase):
-    def test_page_and_split_route(self):
-        from urllib.request import Request, urlopen
-
+    def test_page_has_the_reading_and_no_abbreviations_box(self):
         from pattern_import.server import make_server
 
         server = make_server(0)
@@ -200,15 +203,28 @@ class ServerTests(unittest.TestCase):
         try:
             page = urlopen(f"http://127.0.0.1:{port}/").read().decode()
             self.assertIn("Count this as the pattern", page)
-            body = json.dumps({"text": "Glossary\nRC = row count\n\nKnit 2 rows.\n"}).encode()
+            self.assertIn("Paste the pattern.", page)
+            self.assertNotIn("abbr-list", page)
+            self.assertNotIn(">Abbreviations<", page)
+            body = b"Glossary\nRC = row count\n\nKnit 2 rows.\n"
             request = Request(
-                f"http://127.0.0.1:{port}/split",
+                f"http://127.0.0.1:{port}/file",
                 data=body,
-                headers={"Content-Type": "application/json"},
+                headers={"Content-Type": "text/plain", "X-Filename": "rows.txt"},
             )
             payload = json.loads(urlopen(request).read())
-            self.assertEqual(payload["abbreviations"], "RC = row count")
+            self.assertNotIn("abbreviations", payload)
+            self.assertIn("RC = row count", payload["reading"])
             self.assertIn("Knit 2 rows.", payload["reading"])
+            split = Request(
+                f"http://127.0.0.1:{port}/split",
+                data=b"{}",
+                headers={"Content-Type": "application/json"},
+                method="POST",
+            )
+            with self.assertRaises(HTTPError) as caught:
+                urlopen(split)
+            self.assertEqual(caught.exception.code, 404)
         finally:
             server.shutdown()
             server.server_close()
