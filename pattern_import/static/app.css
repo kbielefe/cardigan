@@ -214,30 +214,25 @@ textarea[readonly] {
   object-fit: fill;
 }
 
-.chart-block {
-  width: min(100%, 68ch);
-  margin: 12px 0;
-}
-
-.chart-block .grid {
-  width: 100%;
-  margin: 0;
-}
-
 .chart {
   display: grid;
   gap: 1px;
-  width: max-content;
-  max-width: 100%;
-  margin: 12px 0 0;
+  padding: 1px;
+  background: var(--rule);
+  box-sizing: border-box;
+}
+
+.grid .chart.cell {
+  display: grid;
+  gap: 1px;
   padding: 1px;
   background: var(--rule);
 }
 
 .chart span {
   display: block;
-  width: 18px;
-  height: 18px;
+  min-width: 0;
+  min-height: 0;
 }
 
 #parts textarea:first-child {
@@ -247,6 +242,7 @@ textarea[readonly] {
 .band {
   display: flex;
   align-items: flex-start;
+  gap: 12px;
   max-width: 68ch;
   margin: 12px 0;
 }
@@ -254,6 +250,7 @@ textarea[readonly] {
 .stack {
   display: flex;
   flex-direction: column;
+  gap: 12px;
   min-width: 0;
 }
 
@@ -261,6 +258,14 @@ textarea[readonly] {
 .band img {
   display: block;
   width: 100%;
+  height: auto;
+}
+
+.stack .chart,
+.band .chart {
+  display: grid;
+  width: 100%;
+  max-width: 100%;
   height: auto;
 }
 

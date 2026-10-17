@@ -143,12 +143,11 @@ function columnsOf(items) {
 function closeBand(row, band) {
   if (!row || !band || band.parts.length < 2) return;
   const columns = columnsOf(band.parts);
-  const sum = columns.reduce((total, column) => total + (column.width || 1), 0);
   row.replaceChildren();
   columns.forEach((column) => {
     const stack = document.createElement("div");
     stack.className = "stack";
-    stack.style.width = `${(column.width / sum) * 100}%`;
+    stack.style.flex = `${column.width} 1 0`;
     column.parts.forEach((part) => appendPicture(stack, part));
     row.append(stack);
   });
@@ -156,35 +155,63 @@ function closeBand(row, band) {
 
 function renderChart(chart) {
   if (!chart || !chart.grid || !chart.grid.length || !chart.grid[0].length) return null;
+  const rows = chart.grid.length;
   const cols = chart.grid[0].length;
   const box = document.createElement("div");
   box.className = "chart";
-  box.style.gridTemplateColumns = `repeat(${cols}, 18px)`;
+  box.style.gridTemplateColumns = `repeat(${cols}, minmax(0, 1fr))`;
+  box.style.gridTemplateRows = `repeat(${rows}, minmax(0, 1fr))`;
   box.setAttribute("role", "img");
-  box.setAttribute("aria-label", `Chart, ${chart.grid.length} rows of ${cols}`);
+  box.setAttribute("aria-label", `Chart, ${rows} rows of ${cols}`);
   chart.grid.forEach((row) => {
     row.forEach((index) => {
       const square = document.createElement("span");
-      square.style.background = (chart.colors && chart.colors[index]) || "transparent";
+      const color = chart.colors && (chart.colors[index] || chart.colors[String(index)]);
+      square.style.background = color || "transparent";
       box.append(square);
     });
   });
   return box;
 }
 
+function pngSize(src) {
+  const marker = "base64,";
+  const at = src ? src.indexOf(marker) : -1;
+  if (at < 0 || !src.startsWith("data:image/png")) return null;
+  let raw;
+  try {
+    raw = atob(src.slice(at + marker.length, at + marker.length + 48));
+  } catch {
+    return null;
+  }
+  if (raw.length < 24 || raw.slice(12, 16) !== "IHDR") return null;
+  const u32 = (index) => (
+    raw.charCodeAt(index) * 16777216
+    + (raw.charCodeAt(index + 1) << 16)
+    + (raw.charCodeAt(index + 2) << 8)
+    + raw.charCodeAt(index + 3)
+  ) >>> 0;
+  return { width: u32(16), height: u32(20) };
+}
+
 function appendPicture(parent, part) {
+  const chart = renderChart(part.chart);
+  if (chart) {
+    const size = pngSize(part.src);
+    const width = (size && size.width) || part.width;
+    const height = (size && size.height) || part.height;
+    if (width && height) chart.style.aspectRatio = `${width} / ${height}`;
+    if (!parent.classList.contains("stack") && width) {
+      chart.style.width = `${width}px`;
+      chart.style.maxWidth = "100%";
+    }
+    parent.append(chart);
+    return;
+  }
   const img = document.createElement("img");
   img.src = part.src;
   img.alt = "";
-  const chart = renderChart(part.chart);
-  if (!chart) {
-    parent.append(img);
-    return;
-  }
-  const block = document.createElement("div");
-  block.className = "with-chart";
-  block.append(img, chart);
-  parent.append(block);
+  parent.append(img);
 }
 
 function renderGrid(grid) {
@@ -193,19 +220,22 @@ function renderGrid(grid) {
   const width = grid.width || 1;
   const height = grid.height || 1;
   box.style.aspectRatio = `${width} / ${height}`;
-  const charts = [];
   (grid.cells || []).forEach((cell) => {
-    const el = cell.kind === "image" ? document.createElement("img") : document.createElement("textarea");
-    el.className = "cell";
+    const chart = cell.kind === "image" ? renderChart(cell.chart) : null;
+    const el = chart || (cell.kind === "image" ? document.createElement("img") : document.createElement("textarea"));
+    el.classList.add("cell");
     el.style.left = `${((cell.left - grid.left) / width) * 100}%`;
     el.style.top = `${((cell.top - grid.top) / height) * 100}%`;
     el.style.width = `${(cell.width / width) * 100}%`;
     el.style.height = `${(cell.height / height) * 100}%`;
+    if (chart) {
+      box.append(el);
+      return;
+    }
     if (cell.kind === "image") {
       el.src = cell.src;
       el.alt = "";
       box.append(el);
-      if (cell.chart) charts.push(cell);
       return;
     }
     el.value = cell.text || "";
@@ -220,16 +250,7 @@ function renderGrid(grid) {
     });
     box.append(el);
   });
-  if (!charts.length) return box;
-  const block = document.createElement("div");
-  block.className = "chart-block";
-  block.append(box);
-  charts.sort((a, b) => a.top - b.top || a.left - b.left);
-  charts.forEach((cell) => {
-    const chart = renderChart(cell.chart);
-    if (chart) block.append(chart);
-  });
-  return block;
+  return box;
 }
 
 function scaleGrids() {
