@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Cardigan — Carbon Copy</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { width: 1440px; height: 900px; overflow: hidden; }
+  body { font-family: system-ui, sans-serif; background: #F4F1E8; color: #1A1A1A; display: flex; flex-direction: column; }
+  header { height: 64px; background: #1B3A6B; color: #F4F1E8; display: flex; align-items: center; padding: 0 32px; font-size: 22px; font-weight: 650; }
+  .intake { display: flex; align-items: center; gap: 16px; padding: 16px 32px; background: #F4F1E8; }
+  .tabs { display: flex; border: 1px solid #1B3A6B; }
+  .tabs span { padding: 8px 14px; font-size: 14px; color: #1B3A6B; }
+  .tabs .on { background: #1B3A6B; color: #F4F1E8; }
+  .url { flex: 1; border: 1px solid #C9C3B4; background: #fff; color: #5C6570; font: 14px system-ui; padding: 8px 12px; }
+  .strip { background: #F5D76E; padding: 16px 32px 18px; }
+  .strip strong { display: block; font-size: 32px; font-weight: 700; letter-spacing: -0.03em; line-height: 1.1; }
+  .strip em { display: block; margin-top: 6px; font-style: normal; font-size: 15px; }
+  main { flex: 1; padding: 20px 32px 16px; }
+  .as { font-size: 13px; letter-spacing: 0.08em; text-transform: uppercase; color: #1B3A6B; margin-bottom: 12px; }
+  .reading { max-width: 740px; font-size: 18px; line-height: 1.45; color: #2C4C8C; }
+  .reading p { margin-bottom: 12px; }
+  .band { background: #E3EAF6; margin-left: -8px; padding: 8px; }
+  footer { display: flex; gap: 12px; padding: 16px 32px 24px; }
+  button { font: 600 16px system-ui; padding: 12px 18px; border: 1px solid #1B3A6B; }
+  .go { background: #1B3A6B; color: #F4F1E8; }
+  .stop { background: transparent; color: #1B3A6B; }
+</style>
+</head>
+<body>
+  <header>Cardigan</header>
+  <div class="intake">
+    <div class="tabs">
+      <span>Paste</span>
+      <span class="on">URL</span>
+      <span>PDF or TXT</span>
+    </div>
+    <div class="url">https://creativetien.com/tuck-stitch-blanket-on-an-lk150-part-1/</div>
+  </div>
+  <div class="strip">
+    <strong>Copy, not yet counted</strong>
+    <em>creativetien.com/tuck-stitch-blanket-on-an-lk150-part-1/</em>
+  </div>
+  <main>
+    <p class="as">As extracted</p>
+    <div class="reading">
+      <p>Tuck stitch blanket on an LK150 - Part 1 -</p>
+      <p class="band">The Tuck stitch is unique to machine knitting. We selected the Tuck stitch needles and pulled them all the way out to the D position. I pull out every 5th needle for this project.</p>
+      <p>Change the Russell lever to I, so the D-position needles will not be knitted.</p>
+      <p>Knit 3 rows. The selected needles will have 3 yarn strands on top of the needles.</p>
+      <p>Change the Russell lever to II again for Stockinette stitch.</p>
+      <p>Cast on from left 70 to right 70 needles with waste yarn, and then switch to the main yarn.</p>
+    </div>
+  </main>
+  <footer>
+    <button class="go">Count this as the pattern</button>
+    <button class="stop">Discard</button>
+  </footer>
+</body>
+</html>

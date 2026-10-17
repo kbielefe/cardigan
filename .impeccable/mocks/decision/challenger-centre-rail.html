@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Cardigan — Centre Rail</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Source+Serif+4:opsz,wght@8..60,400;8..60,600&display=swap">
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { width: 1440px; height: 900px; overflow: hidden; }
+  body { font-family: system-ui, sans-serif; background: #F3EEE3; color: #1A1A1A; display: flex; flex-direction: column; }
+  header { height: 64px; display: flex; align-items: center; padding: 0 32px; font-size: 22px; font-weight: 650; border-bottom: 2px solid #C23A2A; }
+  .intake { display: flex; align-items: center; gap: 16px; padding: 16px 32px; }
+  .tabs { display: flex; border: 1px solid #1A1A1A; }
+  .tabs span { padding: 8px 14px; font-size: 14px; }
+  .tabs .on { background: #1A1A1A; color: #F3EEE3; }
+  .url { flex: 1; border: 1px solid #1A1A1A; background: #F3EEE3; color: #6B6B6B; font: 14px system-ui; padding: 8px 12px; }
+  .stage { flex: 1; display: flex; gap: 36px; padding: 8px 32px 12px; }
+  .reading { width: 640px; font-family: "Source Serif 4", Georgia, serif; font-size: 19px; line-height: 1.45; }
+  .reading p { margin-bottom: 14px; }
+  .marked { border-left: 2px solid #C23A2A; padding-left: 14px; }
+  aside { width: 320px; padding-top: 2px; }
+  .nota { font-size: 24px; line-height: 1.25; color: #C23A2A; font-variant: small-caps; letter-spacing: 0.04em; }
+  .src { margin-top: 16px; font-size: 14px; color: #6B6B6B; line-height: 1.4; }
+  footer { display: flex; gap: 12px; padding: 16px 32px 24px; }
+  button { font: 600 16px system-ui; padding: 12px 18px; border: 1px solid #C23A2A; }
+  .go { background: #C23A2A; color: #F3EEE3; }
+  .stop { background: transparent; color: #1A1A1A; border-color: #1A1A1A; }
+</style>
+</head>
+<body>
+  <header>Cardigan</header>
+  <div class="intake">
+    <div class="tabs">
+      <span>Paste</span>
+      <span class="on">URL</span>
+      <span>PDF or TXT</span>
+    </div>
+    <div class="url">https://creativetien.com/tuck-stitch-blanket-on-an-lk150-part-1/</div>
+  </div>
+  <div class="stage">
+    <div class="reading">
+      <p class="marked">Tuck stitch blanket on an LK150 - Part 1 -</p>
+      <p>The Tuck stitch is unique to machine knitting. We selected the Tuck stitch needles and pulled them all the way out to the D position. I pull out every 5th needle for this project.</p>
+      <p>Change the Russell lever to I, so the D-position needles will not be knitted.</p>
+      <p>Knit 3 rows. The selected needles will have 3 yarn strands on top of the needles.</p>
+      <p>Change the Russell lever to II again for Stockinette stitch.</p>
+    </div>
+    <aside>
+      <p class="nota">Site title. Not an instruction.</p>
+      <p class="src">creativetien.com/tuck-stitch-blanket-on-an-lk150-part-1/</p>
+    </aside>
+  </div>
+  <footer>
+    <button class="go">Count this as the pattern</button>
+    <button class="stop">Discard</button>
+  </footer>
+</body>
+</html>
