@@ -149,14 +149,42 @@ function closeBand(row, band) {
     const stack = document.createElement("div");
     stack.className = "stack";
     stack.style.width = `${(column.width / sum) * 100}%`;
-    column.parts.forEach((part) => {
-      const img = document.createElement("img");
-      img.src = part.src;
-      img.alt = "";
-      stack.append(img);
-    });
+    column.parts.forEach((part) => appendPicture(stack, part));
     row.append(stack);
   });
+}
+
+function renderChart(chart) {
+  if (!chart || !chart.grid || !chart.grid.length || !chart.grid[0].length) return null;
+  const cols = chart.grid[0].length;
+  const box = document.createElement("div");
+  box.className = "chart";
+  box.style.gridTemplateColumns = `repeat(${cols}, 18px)`;
+  box.setAttribute("role", "img");
+  box.setAttribute("aria-label", `Chart, ${chart.grid.length} rows of ${cols}`);
+  chart.grid.forEach((row) => {
+    row.forEach((index) => {
+      const square = document.createElement("span");
+      square.style.background = (chart.colors && chart.colors[index]) || "transparent";
+      box.append(square);
+    });
+  });
+  return box;
+}
+
+function appendPicture(parent, part) {
+  const img = document.createElement("img");
+  img.src = part.src;
+  img.alt = "";
+  const chart = renderChart(part.chart);
+  if (!chart) {
+    parent.append(img);
+    return;
+  }
+  const block = document.createElement("div");
+  block.className = "with-chart";
+  block.append(img, chart);
+  parent.append(block);
 }
 
 function renderGrid(grid) {
@@ -165,6 +193,7 @@ function renderGrid(grid) {
   const width = grid.width || 1;
   const height = grid.height || 1;
   box.style.aspectRatio = `${width} / ${height}`;
+  const charts = [];
   (grid.cells || []).forEach((cell) => {
     const el = cell.kind === "image" ? document.createElement("img") : document.createElement("textarea");
     el.className = "cell";
@@ -176,6 +205,7 @@ function renderGrid(grid) {
       el.src = cell.src;
       el.alt = "";
       box.append(el);
+      if (cell.chart) charts.push(cell);
       return;
     }
     el.value = cell.text || "";
@@ -190,7 +220,16 @@ function renderGrid(grid) {
     });
     box.append(el);
   });
-  return box;
+  if (!charts.length) return box;
+  const block = document.createElement("div");
+  block.className = "chart-block";
+  block.append(box);
+  charts.sort((a, b) => a.top - b.top || a.left - b.left);
+  charts.forEach((cell) => {
+    const chart = renderChart(cell.chart);
+    if (chart) block.append(chart);
+  });
+  return block;
 }
 
 function scaleGrids() {
@@ -255,10 +294,7 @@ function showParts(list) {
       band.bottom = Math.max(band.bottom, part.top + part.height);
     }
     band.parts.push(part);
-    const img = document.createElement("img");
-    img.src = part.src;
-    img.alt = "";
-    row.append(img);
+    appendPicture(row, part);
   });
   closeBand(row, band);
 }

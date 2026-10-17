@@ -33,6 +33,12 @@ class Chart:
     grid: np.ndarray
     colors: dict[int, str]
 
+    def as_dict(self) -> dict:
+        return {
+            "grid": self.grid.astype(int).tolist(),
+            "colors": {str(index): color for index, color in self.colors.items()},
+        }
+
 
 def chart_from_image(
     image: str | Path | bytes | np.ndarray,
@@ -66,6 +72,46 @@ def chart_from_image(
     grid = _indices(samples, palette)
     colors = {index: _hex(color) for index, color in enumerate(palette)}
     return Chart(grid=grid, colors=colors)
+
+
+def chart_size(image: str | Path | bytes | np.ndarray) -> tuple[int, int] | None:
+    """Rows and columns when the rules between squares line up.
+
+    A photograph, a logo, or a mark that is not a grid of squares is None.
+    The count lets the page read a chart the knitter did not measure.
+    """
+    try:
+        rgb = _load_rgb(image)
+    except ValueError:
+        return None
+    quantized = _quantize(rgb.reshape(-1, 3)).reshape(rgb.shape)
+    flat = quantized.reshape(-1, 3)
+    if len(flat) > 4000:
+        flat = flat[:: max(1, len(flat) // 4000)]
+    if len(np.unique(flat, axis=0)) > 16:
+        return None
+    height, width = quantized.shape[:2]
+    row_colors = [_majority(quantized[row]) for row in range(height)]
+    col_colors = [_majority(quantized[:, col]) for col in range(width)]
+    rule = _rule_color(row_colors, col_colors)
+    if rule is None:
+        return None
+    rows = _square_count([color == rule for color in row_colors])
+    cols = _square_count([color == rule for color in col_colors])
+    if rows is None or cols is None or rows < 2 or cols < 2 or rows > 64 or cols > 64:
+        return None
+    return rows, cols
+
+
+def read_chart(image: str | Path | bytes | np.ndarray) -> Chart | None:
+    """The color grid of a chart picture, or None when it is not a chart."""
+    size = chart_size(image)
+    if size is None:
+        return None
+    try:
+        return chart_from_image(image, size[0], size[1])
+    except ValueError:
+        return None
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -142,6 +188,59 @@ def _cell_colors(image: np.ndarray, num_rows: int, num_cols: int) -> np.ndarray:
             median = np.median(patch.reshape(-1, 3), axis=0)
             samples[row, col] = np.clip(np.rint(median), 0, 255).astype(np.uint8)
     return samples
+
+
+def _majority(line: np.ndarray) -> tuple[int, int, int] | None:
+    colors, counts = np.unique(line.reshape(-1, 3), axis=0, return_counts=True)
+    index = int(counts.argmax())
+    if counts[index] < round(0.95 * int(counts.sum())):
+        return None
+    color = colors[index]
+    return int(color[0]), int(color[1]), int(color[2])
+
+
+def _rule_color(
+    rows: list[tuple[int, int, int] | None],
+    cols: list[tuple[int, int, int] | None],
+) -> tuple[int, int, int] | None:
+    hits: dict[tuple[int, int, int], list[int]] = {}
+    for axis, colors in ((0, rows), (1, cols)):
+        for color in colors:
+            if color is None:
+                continue
+            hits.setdefault(color, [0, 0])[axis] += 1
+    best: tuple[int, int, int] | None = None
+    best_count = 0
+    for color, (row_hits, col_hits) in hits.items():
+        if row_hits < 2 or col_hits < 2:
+            continue
+        total = row_hits + col_hits
+        if total > best_count:
+            best = color
+            best_count = total
+    return best
+
+
+def _square_count(is_rule: list[bool]) -> int | None:
+    lengths: list[int] = []
+    start: int | None = None
+    for index, rule in enumerate(is_rule):
+        if not rule and start is None:
+            start = index
+        elif rule and start is not None:
+            lengths.append(index - start)
+            start = None
+    if start is not None:
+        lengths.append(len(is_rule) - start)
+    if not lengths:
+        return None
+    median = float(np.median(lengths))
+    if median < 2:
+        return None
+    kept = [length for length in lengths if length >= median * 0.5]
+    if len(kept) < 2 or max(kept) > median * 2.5:
+        return None
+    return len(kept)
 
 
 def _center(start: int, end: int) -> tuple[int, int]:

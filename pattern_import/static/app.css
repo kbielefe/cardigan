@@ -214,6 +214,32 @@ textarea[readonly] {
   object-fit: fill;
 }
 
+.chart-block {
+  width: min(100%, 68ch);
+  margin: 12px 0;
+}
+
+.chart-block .grid {
+  width: 100%;
+  margin: 0;
+}
+
+.chart {
+  display: grid;
+  gap: 1px;
+  width: max-content;
+  max-width: 100%;
+  margin: 12px 0 0;
+  padding: 1px;
+  background: var(--rule);
+}
+
+.chart span {
+  display: block;
+  width: 18px;
+  height: 18px;
+}
+
 #parts textarea:first-child {
   margin-top: 0;
 }

@@ -112,6 +112,7 @@ class Cell:
     left: int = 0
     width: int = 0
     height: int = 0
+    chart: dict | None = None
 
     def as_dict(self) -> dict:
         item = {
@@ -125,6 +126,8 @@ class Cell:
             item["text"] = self.text
         else:
             item["src"] = self._src()
+            if self.chart:
+                item["chart"] = self.chart
         return item
 
     def _src(self) -> str:
@@ -147,6 +150,7 @@ class Part:
     width: int | None = None
     height: int | None = None
     cells: list[Cell] = field(default_factory=list)
+    chart: dict | None = None
 
     def as_dict(self) -> dict:
         if self.kind == "text":
@@ -168,6 +172,8 @@ class Part:
             item["left"] = self.left
             item["width"] = self.width
             item["height"] = self.height
+        if self.chart:
+            item["chart"] = self.chart
         return item
 
     def _src(self) -> str:
@@ -650,6 +656,7 @@ def _grids(
                         left=shot.left,
                         width=shot.width,
                         height=shot.height,
+                        chart=_read_chart(data),
                     ),
                 )
             )
@@ -737,6 +744,7 @@ def _column_parts(lines: list[_Line], shots: list[_Shot], grids: list[Part], pag
                         left=shot.left,
                         width=shot.width,
                         height=shot.height,
+                        chart=_read_chart(data),
                     )
                 )
     flush()
@@ -807,6 +815,19 @@ def _parts_from_pdf_xml(root: ET.Element, folder: Path) -> list[Part]:
             kept_shots = [shot for index, shot in enumerate(column_shots) if index not in drop_shot]
             parts.extend(_column_parts(_lines(kept_text), kept_shots, grids, page))
     return parts
+
+
+def _read_chart(data: bytes) -> dict | None:
+    if not data:
+        return None
+    try:
+        from pattern_import.chart import read_chart
+    except ImportError:
+        return None
+    chart = read_chart(data)
+    if chart is None:
+        return None
+    return chart.as_dict()
 
 
 def _media_type(data: bytes) -> str:

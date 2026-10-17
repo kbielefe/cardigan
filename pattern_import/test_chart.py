@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import tempfile
 import unittest
 from contextlib import redirect_stdout
@@ -18,6 +19,7 @@ from pattern_import.chart import (
     MSG_SMALL,
     chart_from_image,
     main,
+    read_chart,
 )
 from pattern_import.extract import extract_bytes
 
@@ -94,6 +96,14 @@ FAIRISLE = {
             "KKKKKW",
         ),
     ),
+    (2, 32, 38): (
+        2,
+        2,
+        (
+            "WK",
+            "KW",
+        ),
+    ),
 }
 STITCH = {"K": (0, 0, 0), "W": (255, 255, 255), "G": (153, 153, 153)}
 RULE = (187, 187, 187)
@@ -114,6 +124,24 @@ def _png(image: np.ndarray) -> bytes:
     return encoded.tobytes()
 
 
+class _Chart:
+    def __init__(self, payload):
+        self.grid = np.array(payload["grid"])
+        self.colors = {int(index): color for index, color in payload["colors"].items()}
+
+
+def _attached(result):
+    found = {}
+    for part in result.parts:
+        if part.kind == "image" and part.data:
+            found.setdefault((part.page, part.width, part.height), part)
+        elif part.kind == "grid":
+            for cell in part.cells:
+                if cell.kind == "image" and cell.data:
+                    found.setdefault((part.page, cell.width, cell.height), cell)
+    return found
+
+
 def _images(result):
     for part in result.parts:
         if part.kind == "image" and part.data:
@@ -129,13 +157,32 @@ class ChartTests(unittest.TestCase):
         data = (SOURCES / "patterns/eileen-montgomery-lk150-fairisle.pdf").read_bytes()
         result = extract_bytes(data, "eileen-montgomery-lk150-fairisle.pdf", "application/pdf")
         self.assertTrue(result.ok, result.message)
+        json.dumps(result.as_dict())
         found = {}
         for page, width, height, blob in _images(result):
             found.setdefault((page, width, height), blob)
         self.assertEqual(sorted(key for key in FAIRISLE if key not in found), [])
         for key, (rows, cols, pattern) in FAIRISLE.items():
-            chart = chart_from_image(found[key], rows, cols)
+            chart = read_chart(found[key])
+            self.assertIsNotNone(chart)
+            self.assertEqual(chart.grid.shape, (rows, cols))
             self._squares(chart, pattern)
+        for key, blob in found.items():
+            if key not in FAIRISLE:
+                self.assertIsNone(read_chart(blob), key)
+        attached = _attached(result)
+        for key, (rows, cols, pattern) in FAIRISLE.items():
+            item = attached[key]
+            self.assertTrue(item.data)
+            payload = item.as_dict()
+            self.assertIn("src", payload)
+            self.assertEqual(len(payload["chart"]["grid"]), rows)
+            self.assertEqual(len(payload["chart"]["grid"][0]), cols)
+            self._squares(_Chart(payload["chart"]), pattern)
+        for key, item in attached.items():
+            if key not in FAIRISLE:
+                self.assertIsNone(item.chart, key)
+                self.assertNotIn("chart", item.as_dict())
 
     def test_rules_between_squares_are_not_a_color(self):
         cell = 18
@@ -150,7 +197,9 @@ class ChartTests(unittest.TestCase):
                 y0 = rule + row * span
                 x0 = rule + col * span
                 image[y0 : y0 + cell, x0 : x0 + cell] = fills[symbol]
-        chart = chart_from_image(_png(image), 2, 2)
+        chart = read_chart(_png(image))
+        self.assertIsNotNone(chart)
+        self.assertEqual(chart.grid.shape, (2, 2))
         self._squares(chart, rows)
         for color in chart.colors.values():
             self.assertFalse(_near(color, RULE, limit=16))
