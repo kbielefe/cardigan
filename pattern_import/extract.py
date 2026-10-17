@@ -30,6 +30,12 @@ MAX_BYTES = 20 * 1024 * 1024
 FETCH_TIMEOUT = 20
 LINE_SLACK = 8
 PARAGRAPH_GAP = 28
+LABEL_CHARS = 16
+LABEL_WORDS = 3
+LABEL_WIDTH = 80
+ROW_GAP = 26
+MIN_GRID_ROWS = 4
+GRID_GUTTER = 24
 CHROME_HEADINGS = {
     "latest posts",
     "you may also like",
@@ -96,6 +102,39 @@ VOID_TAGS = {
 
 
 @dataclass
+class Cell:
+    kind: str
+    text: str = ""
+    src: str = ""
+    data: bytes = b""
+    media_type: str = ""
+    top: int = 0
+    left: int = 0
+    width: int = 0
+    height: int = 0
+
+    def as_dict(self) -> dict:
+        item = {
+            "kind": self.kind,
+            "top": self.top,
+            "left": self.left,
+            "width": self.width,
+            "height": self.height,
+        }
+        if self.kind == "text":
+            item["text"] = self.text
+        else:
+            item["src"] = self._src()
+        return item
+
+    def _src(self) -> str:
+        if self.src:
+            return self.src
+        encoded = base64.b64encode(self.data).decode("ascii")
+        return f"data:{self.media_type};base64,{encoded}"
+
+
+@dataclass
 class Part:
     kind: str
     text: str = ""
@@ -107,10 +146,21 @@ class Part:
     left: int | None = None
     width: int | None = None
     height: int | None = None
+    cells: list[Cell] = field(default_factory=list)
 
     def as_dict(self) -> dict:
         if self.kind == "text":
             return {"kind": "text", "text": self.text}
+        if self.kind == "grid":
+            return {
+                "kind": "grid",
+                "page": self.page,
+                "top": self.top,
+                "left": self.left,
+                "width": self.width,
+                "height": self.height,
+                "cells": [cell.as_dict() for cell in self.cells],
+            }
         item = {"kind": "image", "src": self._src()}
         if self.page is not None:
             item["page"] = self.page
@@ -378,8 +428,30 @@ def _first_h1(el: El) -> str:
     return clean(_text(found)) if found is not None else ""
 
 
+def _row_text(cells: list[Cell]) -> str:
+    rows: list[list[str]] = []
+    tops: list[int] = []
+    for cell in sorted(cells, key=lambda item: (item.top, item.left)):
+        if cell.kind != "text" or not cell.text.strip():
+            continue
+        if tops and abs(cell.top - tops[-1]) <= LINE_SLACK:
+            rows[-1].append(cell.text.strip())
+        else:
+            tops.append(cell.top)
+            rows.append([cell.text.strip()])
+    return "\n".join(" ".join(words) for words in rows)
+
+
 def _reading_text(parts: list[Part]) -> str:
-    return "\n\n".join(part.text for part in parts if part.kind == "text" and part.text.strip())
+    chunks: list[str] = []
+    for part in parts:
+        if part.kind == "text" and part.text.strip():
+            chunks.append(part.text)
+        elif part.kind == "grid":
+            text = _row_text(part.cells)
+            if text:
+                chunks.append(text)
+    return "\n\n".join(chunks)
 
 
 def _coalesce(parts: list[Part]) -> list[Part]:
@@ -504,14 +576,120 @@ def _bands(shots: list[_Shot]) -> list[list[_Shot]]:
     return bands
 
 
-def _column_parts(lines: list[_Line], shots: list[_Shot], page: int) -> list[Part]:
-    items: list[tuple[int, int, str, _Line | list[_Shot]]] = []
+def _label_text(value: str) -> str:
+    return re.sub(r"\s+", " ", value).strip()
+
+
+def _is_label(text: str, width: int, height: int) -> bool:
+    if not text or len(text) > LABEL_CHARS or len(text.split()) > LABEL_WORDS:
+        return False
+    return width <= LABEL_WIDTH and 0 < height <= 30
+
+
+def _grids(
+    texts: list[tuple[int, int, int, int, str]],
+    shots: list[_Shot],
+    page: int,
+) -> tuple[list[Part], set[int], set[int]]:
+    """A chart whose cells are images and whose row labels are short text."""
+    labels: list[tuple[int, int, int, int, int, str]] = []
+    for index, (top, left, width, height, text) in enumerate(texts):
+        cleaned = _label_text(text)
+        if _is_label(cleaned, width, height):
+            labels.append((index, top, left, width, height, cleaned))
+    labels.sort(key=lambda item: (item[1], item[2]))
+    rows: list[list[tuple[int, int, int, int, int, str]]] = []
+    for item in labels:
+        if rows and abs(item[1] - rows[-1][0][1]) <= LINE_SLACK:
+            rows[-1].append(item)
+        else:
+            rows.append([item])
+    runs: list[list[list[tuple[int, int, int, int, int, str]]]] = []
+    current: list[list[tuple[int, int, int, int, int, str]]] = []
+    for row in rows:
+        if not current or row[0][1] - current[-1][0][1] <= ROW_GAP:
+            current.append(row)
+        else:
+            runs.append(current)
+            current = [row]
+    if current:
+        runs.append(current)
+
+    grids: list[Part] = []
+    drop_text: set[int] = set()
+    drop_shot: set[int] = set()
+    for run in runs:
+        if len(run) < MIN_GRID_ROWS:
+            continue
+        labs = [item for row in run for item in row]
+        min_top = min(item[1] for item in labs)
+        max_bottom = max(item[1] + item[4] for item in labs)
+        min_left = min(item[2] for item in labs)
+        max_right = max(item[2] + item[3] for item in labs)
+        image_cells: list[tuple[int, Cell]] = []
+        for shot_index, shot in enumerate(shots):
+            if shot_index in drop_shot:
+                continue
+            overlaps_y = shot.top < max_bottom and shot.top + shot.height > min_top
+            overlaps_x = (
+                shot.left < max_right + GRID_GUTTER and shot.left + shot.width > min_left - GRID_GUTTER
+            )
+            if not overlaps_y or not overlaps_x:
+                continue
+            data = shot.path.read_bytes()
+            if not data:
+                continue
+            image_cells.append(
+                (
+                    shot_index,
+                    Cell(
+                        kind="image",
+                        data=data,
+                        media_type=_media_type(data),
+                        top=shot.top,
+                        left=shot.left,
+                        width=shot.width,
+                        height=shot.height,
+                    ),
+                )
+            )
+        if not image_cells:
+            continue
+        cells: list[Cell] = []
+        for index, top, left, width, height, text in labs:
+            cells.append(Cell("text", text=text, top=top, left=left, width=width, height=height))
+            drop_text.add(index)
+        for shot_index, cell in image_cells:
+            cells.append(cell)
+            drop_shot.add(shot_index)
+        g_top = min(cell.top for cell in cells)
+        g_left = min(cell.left for cell in cells)
+        g_right = max(cell.left + cell.width for cell in cells)
+        g_bottom = max(cell.top + cell.height for cell in cells)
+        grids.append(
+            Part(
+                kind="grid",
+                page=page,
+                top=g_top,
+                left=g_left,
+                width=g_right - g_left,
+                height=g_bottom - g_top,
+                cells=cells,
+            )
+        )
+    return grids, drop_text, drop_shot
+
+
+def _column_parts(lines: list[_Line], shots: list[_Shot], grids: list[Part], page: int) -> list[Part]:
+    items: list[tuple[int, int, str, _Line | list[_Shot] | Part]] = []
     for line in lines:
         items.append((line.top, line.left, "text", line))
     for band in _bands(shots):
         top = min(shot.top for shot in band)
         left = min(shot.left for shot in band)
         items.append((top, left, "band", band))
+    for grid in grids:
+        items.append((grid.top or 0, grid.left or 0, "grid", grid))
     items.sort(key=lambda item: (item[0], item[1]))
 
     parts: list[Part] = []
@@ -540,6 +718,9 @@ def _column_parts(lines: list[_Line], shots: list[_Shot], page: int) -> list[Par
     for _top, _left, kind, payload in items:
         if kind == "text" and isinstance(payload, _Line):
             pending.append(payload)
+        elif kind == "grid" and isinstance(payload, Part):
+            flush()
+            parts.append(payload)
         elif isinstance(payload, list):
             flush()
             for shot in payload:
@@ -584,22 +765,17 @@ def _parts_from_pdf_xml(root: ET.Element, folder: Path) -> list[Part]:
     for page_el in root.findall("page"):
         page = _num(page_el, "number")
         mid = _num(page_el, "width") / 2
-        left_text: list[tuple[int, int, int, str]] = []
-        right_text: list[tuple[int, int, int, str]] = []
-        left_shots: list[_Shot] = []
-        right_shots: list[_Shot] = []
+        texts: list[tuple[int, int, int, int, str]] = []
+        shots: list[_Shot] = []
         for el in page_el:
             if el.tag == "text":
                 text = "".join(el.itertext())
                 if not text.strip():
                     continue
                 top, left = _num(el, "top"), _num(el, "left")
+                width = _num(el, "width")
                 height = _num(el, "height") or 1
-                box = (top, left, height, text)
-                if left < mid:
-                    left_text.append(box)
-                else:
-                    right_text.append(box)
+                texts.append((top, left, width, height, text))
             elif el.tag == "image":
                 top, left = _num(el, "top"), _num(el, "left")
                 width, height = _num(el, "width"), _num(el, "height")
@@ -610,14 +786,26 @@ def _parts_from_pdf_xml(root: ET.Element, folder: Path) -> list[Part]:
                 path = _image_file(el.get("src") or "", folder)
                 if path is None:
                     continue
-                shot = _Shot(top, left, width, height, path)
-                center = left + width / 2
-                if center < mid:
-                    left_shots.append(shot)
-                else:
-                    right_shots.append(shot)
-        parts.extend(_column_parts(_lines(left_text), left_shots, page))
-        parts.extend(_column_parts(_lines(right_text), right_shots, page))
+                shots.append(_Shot(top, left, width, height, path))
+        columns = (
+            (
+                [box for box in texts if box[1] < mid],
+                [shot for shot in shots if shot.left + shot.width / 2 < mid],
+            ),
+            (
+                [box for box in texts if box[1] >= mid],
+                [shot for shot in shots if shot.left + shot.width / 2 >= mid],
+            ),
+        )
+        for column_texts, column_shots in columns:
+            grids, drop_text, drop_shot = _grids(column_texts, column_shots, page)
+            kept_text = [
+                (top, left, height, text)
+                for index, (top, left, _width, height, text) in enumerate(column_texts)
+                if index not in drop_text
+            ]
+            kept_shots = [shot for index, shot in enumerate(column_shots) if index not in drop_shot]
+            parts.extend(_column_parts(_lines(kept_text), kept_shots, grids, page))
     return parts
 
 

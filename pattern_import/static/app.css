@@ -180,6 +180,40 @@ textarea[readonly] {
   margin: 12px 0;
 }
 
+.grid {
+  position: relative;
+  width: min(100%, 68ch);
+  margin: 12px 0;
+}
+
+#parts .grid textarea.cell,
+.grid .cell {
+  position: absolute;
+  display: block;
+  box-sizing: border-box;
+  min-width: 0;
+  min-height: 0;
+  max-width: none;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font-family: inherit;
+  line-height: 1;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.grid textarea.cell {
+  resize: none;
+  caret-color: var(--madder);
+}
+
+.grid img.cell {
+  object-fit: fill;
+}
+
 #parts textarea:first-child {
   margin-top: 0;
 }

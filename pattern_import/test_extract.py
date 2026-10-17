@@ -123,13 +123,63 @@ class PdfTests(unittest.TestCase):
         self.assertIn("Manual Method", result.reading)
         self.assertNotIn("left out", result.reading)
         self.assertNotIn("imagesOmitted", result.as_dict())
-        images = _images(result.parts)
-        self.assertTrue(any(part.page == 3 and (part.width or 0) >= 300 for part in images))
-        chart = [part for part in images if part.page == 1 and (part.left or 0) < 400]
-        self.assertGreaterEqual(len(chart), 2)
-        indexes = [index for index, part in enumerate(result.parts) if part in chart]
-        self.assertEqual(indexes, list(range(indexes[0], indexes[0] + len(indexes))))
-        self.assertEqual(sum(1 for part in images if part.page == 1 and part.left == 817), 1)
+        self.assertTrue(any("12" in line and "MC" in line for line in result.reading.splitlines()))
+        grids = [part for part in result.parts if part.kind == "grid"]
+        self.assertEqual([part.page for part in grids], [1])
+        grid = grids[0]
+        labels = [cell for cell in grid.cells if cell.kind == "text"]
+        cells = [cell for cell in grid.cells if cell.kind == "image"]
+        label_text = " ".join(cell.text for cell in labels)
+        self.assertNotIn("Manual Method", label_text)
+        self.assertNotIn("Studio Method", label_text)
+        rc12 = next(cell for cell in labels if cell.text == "12")
+        rc = [
+            next(cell for cell in labels if cell.text == str(number) and abs(cell.left - rc12.left) <= 4)
+            for number in range(12, 0, -1)
+        ]
+        self.assertTrue(all(rc[index].top < rc[index + 1].top for index in range(len(rc) - 1)))
+        for cell in rc:
+            color = next(
+                item
+                for item in labels
+                if item.text in {"MC", "CC"} and abs(item.top - cell.top) <= 8 and item.left > cell.left
+            )
+            self.assertGreater(color.left, cell.left)
+        stitch = [item for item in cells if item.width >= 80 and item.left < rc12.left]
+        self.assertGreaterEqual(len(stitch), 1)
+        pattern_edge = min(item.left for item in stitch)
+        pattern = [
+            next(cell for cell in labels if cell.text == str(number) and cell.left < pattern_edge)
+            for number in range(6, 0, -1)
+        ]
+        for index, cell in enumerate(pattern):
+            self.assertLessEqual(abs(cell.top - rc[2 * index + 1].top), 8)
+        rc_top = rc[0].top
+        rc_bottom = rc[-1].top + rc[-1].height
+        for item in stitch:
+            self.assertLess(item.top, rc_bottom)
+            self.assertGreater(item.top + item.height, rc_top)
+        arrow = next(item for item in cells if item.width < 30 and item.height > 100)
+        self.assertLess(arrow.top, rc_bottom)
+        self.assertGreater(arrow.top + arrow.height, rc_top)
+        line = next(cell for cell in labels if cell.text == "Line")
+        self.assertGreater(line.top, rc[-1].top)
+        left_edge = max(item.left + item.width for item in stitch)
+        right = [
+            next(cell for cell in labels if cell.text == str(number) and cell.left > left_edge)
+            for number in range(6, 0, -1)
+        ]
+        self.assertTrue(all(right[index].top < right[index + 1].top for index in range(len(right) - 1)))
+        pictures = _images(result.parts)
+        self.assertFalse(any(part.page == 1 and (part.left or 0) < 400 for part in pictures))
+        self.assertTrue(any(part.page == 3 and (part.width or 0) >= 300 for part in pictures))
+        prose = "\n".join(part.text for part in result.parts if part.kind == "text")
+        self.assertIn("Manual Method", prose)
+        self.assertIn("Studio Method", prose)
+        self.assertIn("1. Manual Method", prose)
+        self.assertIn("2. Studio Method", prose)
+        self.assertTrue(any(part.kind == "text" and "1x1" in part.text for part in result.parts))
+        self.assertEqual(sum(1 for part in pictures if part.page == 1 and part.left == 817), 1)
         self.assertEqual(result.source, "From eileen-montgomery-lk150-fairisle.pdf")
 
     def test_lk150_scan_has_no_text_layer(self):

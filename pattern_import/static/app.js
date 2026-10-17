@@ -96,9 +96,17 @@ accept.addEventListener("click", () => {
 discard.addEventListener("click", reset);
 another.addEventListener("click", reset);
 
+function partHasWords(part) {
+  if (part.kind === "image" && part.src) return true;
+  if (part.kind === "text" && part.text.trim()) return true;
+  if (part.kind !== "grid") return false;
+  return (part.cells || []).some((cell) =>
+    (cell.kind === "image" && cell.src) || (cell.kind === "text" && cell.text.trim())
+  );
+}
+
 function hasInput() {
-  if (parts && parts.some((part) => part.kind === "image" && part.src)) return true;
-  if (parts) return parts.some((part) => part.kind === "text" && part.text.trim());
+  if (parts) return parts.some(partHasWords);
   return reading.value.trim() !== "";
 }
 
@@ -151,12 +159,65 @@ function closeBand(row, band) {
   });
 }
 
+function renderGrid(grid) {
+  const box = document.createElement("div");
+  box.className = "grid";
+  const width = grid.width || 1;
+  const height = grid.height || 1;
+  box.style.aspectRatio = `${width} / ${height}`;
+  (grid.cells || []).forEach((cell) => {
+    const el = cell.kind === "image" ? document.createElement("img") : document.createElement("textarea");
+    el.className = "cell";
+    el.style.left = `${((cell.left - grid.left) / width) * 100}%`;
+    el.style.top = `${((cell.top - grid.top) / height) * 100}%`;
+    el.style.width = `${(cell.width / width) * 100}%`;
+    el.style.height = `${(cell.height / height) * 100}%`;
+    if (cell.kind === "image") {
+      el.src = cell.src;
+      el.alt = "";
+      box.append(el);
+      return;
+    }
+    el.value = cell.text || "";
+    el.rows = 1;
+    el.spellcheck = false;
+    el.setAttribute("aria-label", "Reading");
+    el.addEventListener("input", () => {
+      cell.text = el.value;
+      if (phase === "accepted" || phase === "working") return;
+      phase = hasInput() ? "ready" : "empty";
+      render();
+    });
+    box.append(el);
+  });
+  return box;
+}
+
+function scaleGrids() {
+  partsEl.querySelectorAll(".grid").forEach((box) => {
+    box.querySelectorAll("textarea").forEach((area) => {
+      const cellH = area.getBoundingClientRect().height;
+      if (!cellH) return;
+      const size = Math.min(18, Math.max(8, cellH * 0.75));
+      area.style.fontSize = `${size}px`;
+      area.style.lineHeight = `${cellH}px`;
+    });
+  });
+}
+
 function showParts(list) {
   parts = list;
   partsEl.replaceChildren();
   let row = null;
   let band = null;
   list.forEach((part) => {
+    if (part.kind === "grid") {
+      closeBand(row, band);
+      row = null;
+      band = null;
+      partsEl.append(renderGrid(part));
+      return;
+    }
     if (part.kind === "text") {
       closeBand(row, band);
       row = null;
@@ -215,13 +276,23 @@ function fit(area, floorRows = 8) {
 
 window.addEventListener("resize", () => {
   if (!reading.hidden) fit(reading);
-  if (!partsEl.hidden) partsEl.querySelectorAll("textarea").forEach((area) => fit(area, 1));
+  if (!partsEl.hidden) {
+    partsEl.querySelectorAll("textarea").forEach((area) => {
+      if (!area.closest(".grid")) fit(area, 1);
+    });
+    scaleGrids();
+  }
 });
 
 function sheet() {
   render();
   if (!reading.hidden) fit(reading);
-  if (!partsEl.hidden) partsEl.querySelectorAll("textarea").forEach((area) => fit(area, 1));
+  if (!partsEl.hidden) {
+    partsEl.querySelectorAll("textarea").forEach((area) => {
+      if (!area.closest(".grid")) fit(area, 1);
+    });
+    scaleGrids();
+  }
 }
 
 async function begin(run) {
@@ -248,7 +319,7 @@ async function begin(run) {
   }
   phase = "ready";
   source.textContent = payload.source || "";
-  const pictures = payload.parts && payload.parts.some((part) => part.kind === "image");
+  const pictures = payload.parts && payload.parts.some((part) => part.kind === "image" || part.kind === "grid");
   if (pictures) {
     showParts(payload.parts);
     reading.value = "";
