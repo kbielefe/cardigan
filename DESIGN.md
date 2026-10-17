@@ -130,7 +130,7 @@ This surface ships the platform sans (system-ui, sans-serif), because the leafle
 
 - Warm paper, ink, and a single madder accent
 - Square rectangles and 1px rules, with no shadow
-- A full-height column with a fixed bar and a scrolling reading
+- A full-bleed bar, then one centered sheet: intake, scrolling reading, and footer
 - Platform sans on this surface, with no motion. The leaflet adds no imagery of its own
 
 ## Colors
@@ -178,17 +178,21 @@ The page sets a light color scheme. It has no dark palette.
 
 ## Layout
 
-A single column fills the viewport. The page itself does not scroll. The body is a column: a fixed bar, a fixed intake, a scrolling reading, and a fixed footer.
+The page itself does not scroll. The body is a column: a full-bleed bar, then one sheet. The sheet holds the intake, the source line, the scrolling reading, and the footer.
 
-The bar is 64px tall. The intake is a row, tabs then the address or file control, with 16px between them and padding 16px 32px 8px. The source line sits under that, padded 4px 32px 12px. The reading region is padded 8px 32px 16px. The footer is padded 16px 32px 24px, and its actions sit in a wrapping row with 12px between them.
+The sheet is as wide as the 68ch measure plus the two 32px gutters, and no wider than the window. On a wider window it is centered, so the paper margins on either side match. The wordmark sits in that same sheet, inside the full-bleed bar, and lines up with the reading.
 
-The column is aligned to the start of the page. It is not centered. The repeated distances are 8px, 12px, 16px, and the 32px gutter. They are not an 8px grid.
+The bar is 64px tall. The intake is a row, tabs then the address or file control, with 16px between them and padding 16px 32px 8px. The source line sits under that, padded 4px 32px 12px. The reading region is padded 8px 32px 16px. The footer is padded 16px 32px 24px, and its actions sit in a wrapping row with 12px between them. The address and the file control fill the intake row. They end where the reading ends.
 
-At 720px and below, the bar, intake, source line, reading, and footer use 16px of horizontal padding. The intake wraps. The tabs stretch to the full width and share it equally. The actions stack, full width.
+The repeated distances are 8px, 12px, 16px, and the 32px gutter. They are not an 8px grid.
+
+At 720px and below, the sheet is the full window. The bar's sheet, the intake, the source line, the reading, and the footer use 16px of horizontal padding. The intake wraps. The tabs stretch to the full width and share it equally. The actions stack, full width.
 
 **The Fixed Bar Rule.** The bar, the intake, and the footer stay fixed. Only the reading region scrolls.
 
-**The Gutter Rule.** The page gutter is 32px, and 16px at the 720px breakpoint. Line length is held by the measure, not by a centered sheet.
+**The Sheet Rule.** The working surface is one sheet, centered when the window is wider than the measure. The bar stays full bleed. The scrollbar sits on the sheet, with the reading.
+
+**The Gutter Rule.** The sheet gutter is 32px, and 16px at the 720px breakpoint. Line length is the measure. The sheet is that measure plus the gutter.
 
 ## Elevation & Depth
 
@@ -231,7 +235,7 @@ The source line under the intake is quiet, label size, line-height 1.4. The sett
 
 ### Bar
 
-A 64px madder band. Padding 0 32px, and 16px at the breakpoint. The wordmark is the brand type, in paper, sentence case, line-height 1. There are no links and no icons. This is not a navigation.
+A 64px madder band, full bleed. The wordmark is in the sheet, padded 0 32px, and 16px at the breakpoint, so it lines up with the reading. It is the brand type, in paper, sentence case, line-height 1. There are no links and no icons. This is not a navigation.
 
 ## Do's and Don'ts
 
@@ -241,6 +245,7 @@ A 64px madder band. Padding 0 32px, and 16px at the breakpoint. The wordmark is 
 - **Do** leave the reading on the paper, unboxed, at the body size, within 68ch.
 - **Do** use a 2px madder focus ring, offset 2px, and only on focus-visible.
 - **Do** stay square (0) and flat, and drop the gutter from 32px to 16px at 720px.
+- **Do** center the sheet on a wide window, and keep the bar full bleed.
 
 ### Don't:
 
@@ -249,3 +254,4 @@ A 64px madder band. Padding 0 32px, and 16px at the breakpoint. The wordmark is 
 - **Don't** box the reading, or give it the field's white fill and tan rule.
 - **Don't** animate state changes. This surface has no transition.
 - **Don't** treat the platform sans as the face every future Cardigan surface must use. It is the face this leaflet ships.
+- **Don't** stretch the address or the file control past the sheet, or pin the reading to the left edge of a wide window.
