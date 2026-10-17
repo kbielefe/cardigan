@@ -1,22 +1,23 @@
-"""Turn a page, a PDF, or a TXT file into the pattern's words.
+"""Turn a page, a PDF, or a TXT file into the pattern's words and pictures.
 
-A glossary stays in the reading with the rest of the pattern. Nothing here
-is resolved into passes.
+A glossary stays in the reading with the rest of the pattern. Pictures from
+the pattern stay in place. Nothing here is resolved into passes.
 """
 
 from __future__ import annotations
 
+import base64
 import re
 import subprocess
 import tempfile
-from dataclasses import dataclass
+import xml.etree.ElementTree as ET
+from dataclasses import dataclass, field
 from html.parser import HTMLParser
 from pathlib import Path
 from urllib.error import URLError
-from urllib.parse import urlparse
+from urllib.parse import urljoin, urlparse
 from urllib.request import Request, urlopen
 
-IMAGE_LINE = "Pictures on this page were left out."
 MSG_FETCH = "This address did not come back. Check it, or paste the pattern."
 MSG_URL_TYPE = "Cardigan takes a page, a PDF, or a TXT file."
 MSG_FILE_TYPE = "Cardigan takes a PDF or a TXT file."
@@ -27,6 +28,8 @@ MSG_SCAN = (
 
 MAX_BYTES = 20 * 1024 * 1024
 FETCH_TIMEOUT = 20
+LINE_SLACK = 8
+PARAGRAPH_GAP = 28
 CHROME_HEADINGS = {
     "latest posts",
     "you may also like",
@@ -70,7 +73,6 @@ DROP_TAGS = {
     "footer",
     "aside",
     "template",
-    "figure",
     "button",
 }
 BLOCK_TAGS = {"p", "h1", "h2", "h3", "h4", "h5", "h6", "li", "blockquote", "pre", "figcaption"}
@@ -91,11 +93,45 @@ VOID_TAGS = {
     "track",
     "wbr",
 }
+
+
+@dataclass
+class Part:
+    kind: str
+    text: str = ""
+    src: str = ""
+    data: bytes = b""
+    media_type: str = ""
+    page: int | None = None
+    top: int | None = None
+    left: int | None = None
+    width: int | None = None
+    height: int | None = None
+
+    def as_dict(self) -> dict:
+        if self.kind == "text":
+            return {"kind": "text", "text": self.text}
+        item = {"kind": "image", "src": self._src()}
+        if self.page is not None:
+            item["page"] = self.page
+            item["top"] = self.top
+            item["left"] = self.left
+            item["width"] = self.width
+            item["height"] = self.height
+        return item
+
+    def _src(self) -> str:
+        if self.src:
+            return self.src
+        encoded = base64.b64encode(self.data).decode("ascii")
+        return f"data:{self.media_type};base64,{encoded}"
+
+
 @dataclass
 class Result:
     ok: bool
     reading: str = ""
-    images_omitted: bool = False
+    parts: list[Part] = field(default_factory=list)
     source: str = ""
     code: str = ""
     message: str = ""
@@ -106,7 +142,7 @@ class Result:
         return {
             "ok": True,
             "reading": self.reading,
-            "imagesOmitted": self.images_omitted,
+            "parts": [part.as_dict() for part in self.parts],
             "source": self.source,
         }
 
@@ -173,6 +209,14 @@ def _blob(el: El) -> str:
     return f"{el.attrs.get('class', '')} {el.attrs.get('id', '')}".lower()
 
 
+def _hidden(el: El) -> bool:
+    style = re.sub(r"\s+", "", el.attrs.get("style", "")).lower()
+    if "display:none" in style:
+        return True
+    blob = _blob(el)
+    return "tasty-pins-hidden" in blob or "hidden-image" in blob
+
+
 def _chrome(el: El) -> bool:
     if el.tag in DROP_TAGS:
         return True
@@ -193,7 +237,7 @@ def _text(el: El, chrome: bool = True) -> str:
             parts.append("\n")
         elif child.tag == "img":
             continue
-        elif chrome and _chrome(child):
+        elif chrome and (_chrome(child) or _hidden(child)):
             continue
         else:
             parts.append(_text(child, chrome))
@@ -202,56 +246,96 @@ def _text(el: El, chrome: bool = True) -> str:
 
 def _has_block(el: El) -> bool:
     for child in el.children:
-        if not isinstance(child, El) or _chrome(child):
+        if not isinstance(child, El) or _chrome(child) or _hidden(child):
             continue
         if child.tag in BLOCK_TAGS or _has_block(child):
             return True
     return False
 
 
-def _walk_blocks(el: El, out: list[El]):
-    if _chrome(el):
+def _has_image(el: El) -> bool:
+    if _chrome(el) or _hidden(el):
+        return False
+    if el.tag == "img":
+        return True
+    return any(isinstance(child, El) and _has_image(child) for child in el.children)
+
+
+def _walk_blocks(el: El | str, out: list[El | str]):
+    if isinstance(el, str):
+        if el.strip():
+            out.append(el)
+        return
+    if _chrome(el) or _hidden(el):
+        return
+    if el.tag == "img":
+        out.append(el)
         return
     if el.tag in BLOCK_TAGS:
         out.append(el)
         return
-    if _has_block(el):
+    if _has_block(el) or _has_image(el):
         for child in el.children:
-            if isinstance(child, El):
-                _walk_blocks(child, out)
+            _walk_blocks(child, out)
         return
     if clean(_text(el)):
         out.append(el)
 
 
-def _section_label(el: El) -> tuple[str | None, str]:
-    """A heading label and the rest of the block, or the whole block as body."""
-    full = clean(_text(el))
-    if el.tag in HEADING_TAGS:
-        return full, ""
-    nodes = [child for child in el.children if not (isinstance(child, str) and not child.strip())]
-    if nodes and isinstance(nodes[0], El) and nodes[0].tag in {"strong", "b"}:
-        label = clean(_text(nodes[0]))
-        nxt = nodes[1] if len(nodes) > 1 else None
-        followed_by_break = isinstance(nxt, El) and nxt.tag == "br"
-        if followed_by_break and len(label) <= 60 and "." not in label:
-            rest = clean(_render(nodes[2:]))
-            return label, rest
-    return None, full
+def _image_url(src: str, base_url: str) -> str:
+    src = src.strip()
+    if not src:
+        return ""
+    if src.startswith("//"):
+        src = "https:" + src
+    if src.startswith("data:image/"):
+        return src
+    parsed = urlparse(src)
+    if parsed.scheme in {"http", "https"}:
+        return src
+    if parsed.scheme or not base_url:
+        return ""
+    resolved = urljoin(base_url, src)
+    if urlparse(resolved).scheme not in {"http", "https"}:
+        return ""
+    return resolved
 
 
-def _render(nodes: list[El | str]) -> str:
-    parts: list[str] = []
-    for node in nodes:
+def _block_parts(block: El | str, base_url: str) -> list[Part]:
+    if isinstance(block, str):
+        text = clean(block)
+        return [Part("text", text=text)] if text else []
+    parts: list[Part] = []
+    buf: list[str] = []
+
+    def flush():
+        text = clean("".join(buf))
+        buf.clear()
+        if text:
+            parts.append(Part("text", text=text))
+
+    def walk(node: El | str):
         if isinstance(node, str):
-            parts.append(node)
-        elif node.tag == "br":
-            parts.append("\n")
-        elif node.tag == "img" or _chrome(node):
-            continue
-        else:
-            parts.append(_text(node))
-    return "".join(parts)
+            buf.append(node)
+            return
+        if node.tag == "br":
+            buf.append("\n")
+            return
+        if node.tag == "img":
+            src = _image_url(node.attrs.get("src", ""), base_url)
+            if not src:
+                return
+            flush()
+            parts.append(Part("image", src=src))
+            return
+        if _chrome(node) or _hidden(node):
+            return
+        for child in node.children:
+            walk(child)
+
+    walk(block)
+    flush()
+    return parts
 
 
 def _find(el: El, pred) -> El | None:
@@ -294,15 +378,27 @@ def _first_h1(el: El) -> str:
     return clean(_text(found)) if found is not None else ""
 
 
-def _count_images(el: El) -> int:
-    count = 1 if el.tag == "img" else 0
-    for child in el.children:
-        if isinstance(child, El) and child.tag not in {"script", "style"}:
-            count += _count_images(child)
-    return count
+def _reading_text(parts: list[Part]) -> str:
+    return "\n\n".join(part.text for part in parts if part.kind == "text" and part.text.strip())
 
 
-def html_to_reading(markup: str) -> tuple[str, bool]:
+def _coalesce(parts: list[Part]) -> list[Part]:
+    out: list[Part] = []
+    for part in parts:
+        if part.kind == "text":
+            text = clean(part.text)
+            if not text:
+                continue
+            if out and out[-1].kind == "text":
+                out[-1].text = clean(f"{out[-1].text}\n\n{text}")
+            else:
+                out.append(Part("text", text=text))
+        else:
+            out.append(part)
+    return out
+
+
+def html_to_reading(markup: str, base_url: str = "") -> list[Part]:
     parser = _Tree()
     parser.feed(markup)
     parser.close()
@@ -311,44 +407,18 @@ def html_to_reading(markup: str) -> tuple[str, bool]:
         lambda el: el.tag == "article" and "comment" not in _blob(el),
     )
     root = _content_root(parser.root)
-    images = _count_images(root) > 0
-    blocks = []
+    blocks: list[El | str] = []
     _walk_blocks(root, blocks)
-
-    sections: list[tuple[str | None, list[str]]] = []
-    current: tuple[str | None, list[str]] = (None, [])
-
-    def push(label: str | None = None):
-        nonlocal current
-        if current[0] is not None or current[1]:
-            sections.append(current)
-        current = (label, [])
-
+    parts: list[Part] = []
     for block in blocks:
-        label, rest = _section_label(block)
-        if label is not None:
-            push(label)
-            if rest:
-                current[1].extend(line for line in rest.split("\n") if line.strip())
-        elif rest:
-            current[1].extend(line for line in rest.split("\n") if line.strip())
-    push()
-
-    reading_parts: list[str] = []
-    for label, lines in sections:
-        if label:
-            reading_parts.append(label)
-        reading_parts.extend(lines)
-
+        parts.extend(_block_parts(block, base_url))
     title = ""
     if article is not None and not _find(root, lambda el: el.tag == "h1"):
         title = _first_h1(article)
-    reading = "\n\n".join(part for part in reading_parts if part.strip())
-    if title and norm_heading(title) != norm_heading(reading.split("\n", 1)[0]):
-        reading = f"{title}\n\n{reading}" if reading else title
-    if images and reading:
-        reading = f"{reading.rstrip()}\n\n{IMAGE_LINE}"
-    return reading.strip(), images
+    reading = _reading_text(parts)
+    if title and (not reading or norm_heading(title) != norm_heading(reading.split("\n", 1)[0])):
+        parts.insert(0, Part("text", text=title))
+    return _coalesce(parts)
 
 
 def plain_reading(text: str) -> str:
@@ -360,59 +430,251 @@ def _has_letters(text: str) -> bool:
     return any(char.isalnum() for char in text)
 
 
-def _pdf_parts(data: bytes) -> tuple[str, bool]:
+def _text_result(reading: str, source: str) -> Result:
+    parts = [Part("text", text=reading)] if reading else []
+    return Result(ok=True, reading=reading, parts=parts, source=source)
+
+
+@dataclass
+class _Line:
+    top: int
+    left: int
+    height: int
+    text: str
+
+
+@dataclass
+class _Shot:
+    top: int
+    left: int
+    width: int
+    height: int
+    path: Path
+
+
+def _num(el: ET.Element, name: str) -> int:
+    raw = el.get(name) or "0"
+    try:
+        return int(float(raw))
+    except ValueError:
+        return 0
+
+
+def _lines(boxes: list[tuple[int, int, int, str]]) -> list[_Line]:
+    ordered = sorted(boxes, key=lambda box: (box[0], box[1]))
+    groups: list[list[tuple[int, int, int, str]]] = []
+    for box in ordered:
+        if groups and abs(box[0] - groups[-1][0][0]) <= LINE_SLACK:
+            groups[-1].append(box)
+        else:
+            groups.append([box])
+    lines: list[_Line] = []
+    for group in groups:
+        group.sort(key=lambda box: box[1])
+        pieces = [re.sub(r"[ \t]+", " ", box[3]).strip() for box in group]
+        text = " ".join(piece for piece in pieces if piece)
+        if not text:
+            continue
+        lines.append(
+            _Line(
+                top=min(box[0] for box in group),
+                left=min(box[1] for box in group),
+                height=max(box[2] for box in group),
+                text=text,
+            )
+        )
+    return lines
+
+
+def _bands(shots: list[_Shot]) -> list[list[_Shot]]:
+    ordered = sorted(shots, key=lambda shot: (shot.top, shot.left))
+    bands: list[list[_Shot]] = []
+    for shot in ordered:
+        if not bands:
+            bands.append([shot])
+            continue
+        top = min(item.top for item in bands[-1])
+        bottom = max(item.top + item.height for item in bands[-1])
+        if shot.top <= bottom and shot.top + shot.height >= top:
+            bands[-1].append(shot)
+        else:
+            bands.append([shot])
+    for band in bands:
+        band.sort(key=lambda shot: shot.left)
+    return bands
+
+
+def _column_parts(lines: list[_Line], shots: list[_Shot], page: int) -> list[Part]:
+    items: list[tuple[int, int, str, _Line | list[_Shot]]] = []
+    for line in lines:
+        items.append((line.top, line.left, "text", line))
+    for band in _bands(shots):
+        top = min(shot.top for shot in band)
+        left = min(shot.left for shot in band)
+        items.append((top, left, "band", band))
+    items.sort(key=lambda item: (item[0], item[1]))
+
+    parts: list[Part] = []
+    pending: list[_Line] = []
+
+    def flush():
+        if not pending:
+            return
+        paragraphs: list[str] = []
+        current: list[str] = []
+        previous: _Line | None = None
+        for line in pending:
+            if previous is not None and line.top - previous.top > PARAGRAPH_GAP:
+                if current:
+                    paragraphs.append("\n".join(current))
+                    current = []
+            current.append(line.text)
+            previous = line
+        if current:
+            paragraphs.append("\n".join(current))
+        text = clean("\n\n".join(paragraphs))
+        if text:
+            parts.append(Part("text", text=text))
+        pending.clear()
+
+    for _top, _left, kind, payload in items:
+        if kind == "text" and isinstance(payload, _Line):
+            pending.append(payload)
+        elif isinstance(payload, list):
+            flush()
+            for shot in payload:
+                data = shot.path.read_bytes()
+                if not data:
+                    continue
+                parts.append(
+                    Part(
+                        kind="image",
+                        data=data,
+                        media_type=_media_type(data),
+                        page=page,
+                        top=shot.top,
+                        left=shot.left,
+                        width=shot.width,
+                        height=shot.height,
+                    )
+                )
+    flush()
+    return parts
+
+
+def _image_file(src: str, folder: Path) -> Path | None:
+    if not src:
+        return None
+    path = Path(src)
+    if not path.is_absolute():
+        path = folder / path
+    try:
+        path = path.resolve()
+    except OSError:
+        return None
+    root = folder.resolve()
+    if not path.is_relative_to(root) or not path.is_file():
+        return None
+    return path
+
+
+def _parts_from_pdf_xml(root: ET.Element, folder: Path) -> list[Part]:
+    parts: list[Part] = []
+    seen: set[tuple[int, int, int]] = set()
+    for page_el in root.findall("page"):
+        page = _num(page_el, "number")
+        mid = _num(page_el, "width") / 2
+        left_text: list[tuple[int, int, int, str]] = []
+        right_text: list[tuple[int, int, int, str]] = []
+        left_shots: list[_Shot] = []
+        right_shots: list[_Shot] = []
+        for el in page_el:
+            if el.tag == "text":
+                text = "".join(el.itertext())
+                if not text.strip():
+                    continue
+                top, left = _num(el, "top"), _num(el, "left")
+                height = _num(el, "height") or 1
+                box = (top, left, height, text)
+                if left < mid:
+                    left_text.append(box)
+                else:
+                    right_text.append(box)
+            elif el.tag == "image":
+                top, left = _num(el, "top"), _num(el, "left")
+                width, height = _num(el, "width"), _num(el, "height")
+                slot = (page, top, left)
+                if slot in seen:
+                    continue
+                seen.add(slot)
+                path = _image_file(el.get("src") or "", folder)
+                if path is None:
+                    continue
+                shot = _Shot(top, left, width, height, path)
+                center = left + width / 2
+                if center < mid:
+                    left_shots.append(shot)
+                else:
+                    right_shots.append(shot)
+        parts.extend(_column_parts(_lines(left_text), left_shots, page))
+        parts.extend(_column_parts(_lines(right_text), right_shots, page))
+    return parts
+
+
+def _media_type(data: bytes) -> str:
+    if data.startswith(b"\x89PNG"):
+        return "image/png"
+    if data.startswith(b"\xff\xd8"):
+        return "image/jpeg"
+    if data.startswith(b"GIF8"):
+        return "image/gif"
+    if data.startswith(b"RIFF") and b"WEBP" in data[:16]:
+        return "image/webp"
+    return "application/octet-stream"
+
+
+def _pdf_parts(data: bytes) -> list[Part]:
     with tempfile.TemporaryDirectory() as directory:
-        path = Path(directory) / "pattern.pdf"
-        path.write_bytes(data)
-        text_proc = subprocess.run(
-            ["pdftotext", "-q", "-enc", "UTF-8", str(path), "-"],
+        folder = Path(directory)
+        pdf_path = folder / "pattern.pdf"
+        pdf_path.write_bytes(data)
+        xml_path = folder / "pattern.xml"
+        subprocess.run(
+            ["pdftohtml", "-xml", "-nodrm", "-q", str(pdf_path), str(xml_path)],
             capture_output=True,
             timeout=60,
             check=False,
         )
-        image_proc = subprocess.run(
-            ["pdfimages", "-list", str(path)],
-            capture_output=True,
-            timeout=60,
-            check=False,
-        )
-    text = text_proc.stdout.decode("utf-8", errors="replace")
-    images = any(
-        re.match(r"\s*\d+\s+\d+\s+image\b", line)
-        for line in image_proc.stdout.decode("utf-8", errors="replace").splitlines()
-    )
-    return text, images
+        if not xml_path.is_file():
+            return []
+        root = ET.parse(xml_path).getroot()
+        words = " ".join("".join(el.itertext()) for el in root.iter("text"))
+        if not _has_letters(words):
+            return []
+        return _coalesce(_parts_from_pdf_xml(root, folder))
 
 
 def from_pdf(data: bytes, source: str) -> Result:
-    text, images = _pdf_parts(data)
-    if not _has_letters(text):
+    parts = _pdf_parts(data)
+    reading = _reading_text(parts)
+    if not _has_letters(reading):
         return Result(ok=False, code="empty-pdf", message=MSG_SCAN)
-    reading = plain_reading(text)
-    if images and reading:
-        reading = f"{reading.rstrip()}\n\n{IMAGE_LINE}"
-    return Result(
-        ok=True,
-        reading=reading,
-        images_omitted=images,
-        source=source,
-    )
+    return Result(ok=True, reading=reading, parts=parts, source=source)
 
 
-def from_html(data: bytes, source: str) -> Result:
+def from_html(data: bytes, source: str, base_url: str = "") -> Result:
     markup = data.decode("utf-8-sig", errors="replace")
-    reading, images = html_to_reading(markup)
+    parts = html_to_reading(markup, base_url)
     return Result(
         ok=True,
-        reading=reading,
-        images_omitted=images,
+        reading=_reading_text(parts),
+        parts=parts,
         source=source,
     )
 
 
 def from_text(data: bytes, source: str) -> Result:
-    text = data.decode("utf-8-sig", errors="replace")
-    return Result(ok=True, reading=plain_reading(text), source=source)
+    return _text_result(plain_reading(data.decode("utf-8-sig", errors="replace")), source)
 
 
 def source_from_url(url: str) -> str:
@@ -450,12 +712,12 @@ def extract_bytes(data: bytes, filename: str, content_type: str) -> Result:
     return Result(ok=False, code="type", message=MSG_FILE_TYPE)
 
 
-def extract_fetched(data: bytes, content_type: str, source: str) -> Result:
+def extract_fetched(data: bytes, content_type: str, source: str, base_url: str = "") -> Result:
     kind = content_type.lower()
     if data.startswith(b"%PDF") or "pdf" in kind:
         return from_pdf(data, source)
     if "html" in kind or _looks_like_html(data):
-        return from_html(data, source)
+        return from_html(data, source, base_url)
     if kind.startswith("text/"):
         return from_text(data, source)
     return Result(ok=False, code="type", message=MSG_URL_TYPE)
@@ -476,4 +738,4 @@ def fetch_url(url: str) -> Result:
         return Result(ok=False, code="fetch", message=MSG_FETCH)
     if status >= 400 or len(data) > MAX_BYTES:
         return Result(ok=False, code="fetch", message=MSG_FETCH)
-    return extract_fetched(data, content_type, source)
+    return extract_fetched(data, content_type, source, url)

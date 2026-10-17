@@ -124,14 +124,14 @@ Cardigan's first visual system is a pattern leaflet: warm paper and a madder bar
 
 The madder rectangle is the form. The bar is a solid one. The tabs and the actions are thin ones, edged with a 1px madder rule. The reading is not a rectangle of chrome. It sits on the paper in the body size.
 
-This surface ships the platform sans (system-ui, sans-serif), because the leaflet brief asked for the face the browser already has. That stack is a fact of this page. It is not the typeface every future Cardigan surface must use. The page has no logo, no imagery, and no motion.
+This surface ships the platform sans (system-ui, sans-serif), because the leaflet brief asked for the face the browser already has. That stack is a fact of this page. It is not the typeface every future Cardigan surface must use. The page has no logo and no motion. A picture in the reading comes from the pattern. The leaflet itself adds none.
 
 **Key Characteristics:**
 
 - Warm paper, ink, and a single madder accent
 - Square rectangles and 1px rules, with no shadow
 - A full-height column with a fixed bar and a scrolling reading
-- Platform sans on this surface, with no motion and no imagery
+- Platform sans on this surface, with no motion. The leaflet adds no imagery of its own
 
 ## Colors
 
@@ -213,7 +213,7 @@ Corners are square (0). The stylesheet sets no radius, and the bar, tabs, fields
 - **Quiet:** Transparent ground, madder text, the same border, type, and padding. Hover fills inset. Disabled hover stays transparent.
 - **Hover / Focus:** The fill changes immediately. There is no transition. Focus-visible is the 2px madder ring, offset 2px.
 
-The counted state uses the same primary button. It does not introduce a third shape.
+The accepted state uses the same primary button. It does not introduce a third shape. Accepting the input settles the reading.
 
 **The Two Actions Rule.** The primary action is a madder rectangle with paper text. The quiet action is madder text on a transparent ground. Both share the 1px madder edge, the action type, and 12px 18px padding.
 
@@ -225,7 +225,7 @@ A joined row inside one 1px madder rectangle. Each tab is square, transparent, m
 
 - **Address:** White field, 1px tan rule, ink text, quiet placeholder at full opacity, padding 8px 12px, label type, madder caret, square.
 - **File:** The same edge and padding, quiet text, at least 38px tall. Focus inside the control draws the 2px madder ring.
-- **Reading:** No border, no fill, no padding, body type, line-height 1.45, madder caret, measure 68ch. It does not drag-resize. It grows with the text instead of scrolling inside the field. Notices above it use the body size, the same measure, and 12px under them.
+- **Reading:** No border, no fill, no padding, body type, line-height 1.45, madder caret, measure 68ch. It does not drag-resize. It grows with the text instead of scrolling inside the field. Notices above it use the body size, the same measure, and 12px under them. Pictures from the pattern sit in the reading, unboxed, on the paper, no wider than the measure. Pictures that share a vertical band sit in one row, each at its share of that width.
 
 The source line under the intake is quiet, label size, line-height 1.4. The settled confirmation is the note role, in ink, with 12px under it before the actions.
 

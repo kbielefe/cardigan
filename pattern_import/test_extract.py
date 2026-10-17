@@ -11,7 +11,6 @@ from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
 from pattern_import.extract import (
-    IMAGE_LINE,
     MSG_FETCH,
     MSG_FILE_TYPE,
     MSG_SCAN,
@@ -30,13 +29,21 @@ def _read(relative: str) -> str:
     return (SOURCES / relative).read_text(encoding="utf-8")
 
 
+def _words(parts) -> str:
+    return "\n\n".join(part.text for part in parts if part.kind == "text")
+
+
+def _images(parts):
+    return [part for part in parts if part.kind == "image"]
+
+
 class HtmlTests(unittest.TestCase):
     def test_creative_tien_keeps_the_instructions_and_drops_chrome(self):
-        reading, images = html_to_reading(
-            _read("patterns/creative-tien-lk150-tuck-blanket.html")
-        )
-        self.assertTrue(images)
-        self.assertIn(IMAGE_LINE, reading)
+        parts = html_to_reading(_read("patterns/creative-tien-lk150-tuck-blanket.html"))
+        reading = _words(parts)
+        srcs = [part.src for part in _images(parts)]
+        self.assertTrue(any("baby-blanket" in src for src in srcs))
+        self.assertNotIn("left out", reading)
         self.assertIn("Tuck stitch blanket on an LK150", reading)
         self.assertIn("Change the Russell lever to I", reading)
         self.assertNotIn("Join our email newsletter", reading)
@@ -46,11 +53,12 @@ class HtmlTests(unittest.TestCase):
         self.assertNotIn("Leave a Reply", reading)
 
     def test_city_farmhouse_glossary_stays_in_the_reading(self):
-        reading, images = html_to_reading(
-            _read("patterns/city-farmhouse-wrap-sweater-scarf.html")
-        )
-        self.assertTrue(images)
-        self.assertIn(IMAGE_LINE, reading)
+        parts = html_to_reading(_read("patterns/city-farmhouse-wrap-sweater-scarf.html"))
+        reading = _words(parts)
+        srcs = [part.src for part in _images(parts)]
+        self.assertTrue(srcs)
+        self.assertTrue(any(src.startswith("https://") for src in srcs))
+        self.assertNotIn("left out", reading)
         self.assertIn("Glossary", reading)
         self.assertIn("RC = row count", reading)
         self.assertIn("Sts = stitches", reading)
@@ -60,9 +68,7 @@ class HtmlTests(unittest.TestCase):
         self.assertNotIn("Polly", reading)
 
     def test_clearwater_long_heading_stays_in_the_reading(self):
-        reading, _images = html_to_reading(
-            _read("references/clearwater-abbreviations.html")
-        )
+        reading = _words(html_to_reading(_read("references/clearwater-abbreviations.html")))
         self.assertIn("Machine Knitting Abbreviations and Terms", reading)
         self.assertIn("alternate", reading)
         self.assertNotIn("Home", reading.split("Machine Knitting", 1)[0])
@@ -114,8 +120,16 @@ class PdfTests(unittest.TestCase):
         result = extract_bytes(data, "eileen-montgomery-lk150-fairisle.pdf", "application/pdf")
         self.assertTrue(result.ok, result.message)
         self.assertIn("LK150 Fairisle", result.reading)
-        self.assertTrue(result.images_omitted)
-        self.assertIn(IMAGE_LINE, result.reading)
+        self.assertIn("Manual Method", result.reading)
+        self.assertNotIn("left out", result.reading)
+        self.assertNotIn("imagesOmitted", result.as_dict())
+        images = _images(result.parts)
+        self.assertTrue(any(part.page == 3 and (part.width or 0) >= 300 for part in images))
+        chart = [part for part in images if part.page == 1 and (part.left or 0) < 400]
+        self.assertGreaterEqual(len(chart), 2)
+        indexes = [index for index, part in enumerate(result.parts) if part in chart]
+        self.assertEqual(indexes, list(range(indexes[0], indexes[0] + len(indexes))))
+        self.assertEqual(sum(1 for part in images if part.page == 1 and part.left == 817), 1)
         self.assertEqual(result.source, "From eileen-montgomery-lk150-fairisle.pdf")
 
     def test_lk150_scan_has_no_text_layer(self):
@@ -183,7 +197,9 @@ class FetchTests(unittest.TestCase):
             self.assertIn("RC = row count", html.reading)
             self.assertIn("Sts = stitches", html.reading)
             self.assertIn("hand manipulation", html.reading)
-            self.assertIn(IMAGE_LINE, html.reading)
+            self.assertNotIn("left out", html.reading)
+            srcs = [part["src"] for part in html.as_dict()["parts"] if part["kind"] == "image"]
+            self.assertIn(f"http://127.0.0.1:{port}/coat.jpg", srcs)
             refused = fetch_url(f"http://127.0.0.1:{port}/photo.png")
             self.assertFalse(refused.ok)
             self.assertEqual(refused.message, MSG_URL_TYPE)
@@ -202,7 +218,8 @@ class ServerTests(unittest.TestCase):
         port = server.server_address[1]
         try:
             page = urlopen(f"http://127.0.0.1:{port}/").read().decode()
-            self.assertIn("Count this as the pattern", page)
+            self.assertIn("Accept this input", page)
+            self.assertNotIn("Count this as the pattern", page)
             self.assertIn("Paste the pattern.", page)
             self.assertNotIn("abbr-list", page)
             self.assertNotIn(">Abbreviations<", page)
@@ -214,6 +231,8 @@ class ServerTests(unittest.TestCase):
             )
             payload = json.loads(urlopen(request).read())
             self.assertNotIn("abbreviations", payload)
+            self.assertNotIn("imagesOmitted", payload)
+            self.assertEqual(payload["parts"], [{"kind": "text", "text": payload["reading"]}])
             self.assertIn("RC = row count", payload["reading"])
             self.assertIn("Knit 2 rows.", payload["reading"])
             split = Request(

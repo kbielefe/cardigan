@@ -36,12 +36,13 @@
       <label class="sr" for="reading">Reading</label>
       <p class="notice" id="notice" role="status" hidden></p>
       <textarea id="reading" rows="8" placeholder="Paste the pattern." spellcheck="false"></textarea>
+      <div id="parts" hidden></div>
     </div>
   </main>
   <footer>
     <p class="settled" id="settled" hidden>This is the reading.</p>
     <div class="actions">
-      <button type="button" class="go" id="count" disabled>Count this as the pattern</button>
+      <button type="button" class="go" id="accept" disabled>Accept this input</button>
       <button type="button" class="stop" id="discard">Discard</button>
       <button type="button" class="go" id="another" hidden>Bring in another</button>
     </div>

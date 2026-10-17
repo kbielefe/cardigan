@@ -176,6 +176,39 @@ textarea[readonly] {
   background: transparent;
 }
 
+#parts textarea {
+  margin: 12px 0;
+}
+
+#parts textarea:first-child {
+  margin-top: 0;
+}
+
+.band {
+  display: flex;
+  align-items: flex-start;
+  max-width: 68ch;
+  margin: 12px 0;
+}
+
+.stack {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.stack img,
+.band img {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.band.single img {
+  width: auto;
+  max-width: 100%;
+}
+
 .notice {
   margin: 0 0 12px;
   max-width: 68ch;
