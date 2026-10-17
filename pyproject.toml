@@ -1,0 +1,10 @@
+[project]
+name = "cardigan"
+version = "0.1.0"
+description = "Turn a written knitting pattern into carriage passes."
+requires-python = ">=3.13"
+dependencies = [
+    "numpy>=2.5.4",
+    "opencv-python-headless>=5.0.0.93",
+    "scikit-learn>=1.9.1",
+]
