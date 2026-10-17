@@ -399,7 +399,7 @@ function reset() {
   reading.value = "";
   urlInput.value = "";
   fileInput.value = "";
-  fileLabel.textContent = "Choose a PDF or TXT file";
+  fileLabel.textContent = "Choose an HTML, PDF, or TXT file";
   sheet();
   reading.focus();
 }

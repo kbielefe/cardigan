@@ -106,12 +106,43 @@ class PlainTests(unittest.TestCase):
         self.assertTrue(txt.ok)
         self.assertEqual(txt.source, "From rows.txt")
         self.assertIn("Knit 2 rows.", txt.reading)
-        refused = extract_bytes(b"<p>Knit 2 rows.</p>", "pattern.html", "text/html")
-        self.assertFalse(refused.ok)
-        self.assertEqual(refused.message, MSG_FILE_TYPE)
+        html = extract_bytes(b"<p>Knit 2 rows.</p>", "pattern.html", "text/html")
+        self.assertTrue(html.ok, html.message)
+        self.assertEqual(html.source, "From pattern.html")
+        self.assertIn("Knit 2 rows.", html.reading)
+        self.assertNotIn("<p>", html.reading)
+        htm = extract_bytes(b"<h1>Cast on</h1>", "notes.htm", "application/octet-stream")
+        self.assertTrue(htm.ok, htm.message)
+        self.assertIn("Cast on", htm.reading)
+        typed = extract_bytes(b"<p>Tension 8.</p>", "saved", "text/html; charset=utf-8")
+        self.assertTrue(typed.ok, typed.message)
+        self.assertIn("Tension 8.", typed.reading)
+        tagged = extract_bytes(b"<p>Knit 2 rows.</p>", "rows.txt", "text/html")
+        self.assertEqual(tagged.reading, "<p>Knit 2 rows.</p>")
         png = extract_bytes(b"\x89PNG\r\n", "photo.png", "image/png")
         self.assertFalse(png.ok)
         self.assertEqual(png.message, MSG_FILE_TYPE)
+
+    def test_sample_html_files(self):
+        samples = (
+            ("patterns/creative-tien-lk150-tuck-blanket.html", "Change the Russell lever to I"),
+            ("patterns/city-farmhouse-wrap-sweater-scarf.html", "RC = row count"),
+            ("patterns/clearwater-lk150-fairisle-method-1.html", "Both Side Levers"),
+        )
+        for relative, phrase in samples:
+            data = (SOURCES / relative).read_bytes()
+            name = Path(relative).name
+            uploaded = extract_bytes(data, name, "text/html")
+            direct = html_to_reading(data.decode("utf-8-sig", errors="replace"))
+            self.assertTrue(uploaded.ok, uploaded.message)
+            self.assertEqual(uploaded.source, f"From {name}")
+            self.assertEqual(
+                [(part.kind, part.text, part.src) for part in uploaded.parts],
+                [(part.kind, part.text, part.src) for part in direct],
+            )
+            self.assertIn(phrase, uploaded.reading)
+            self.assertNotIn("Join our email newsletter", uploaded.reading)
+            self.assertNotIn("left out", uploaded.reading)
 
 
 class PdfTests(unittest.TestCase):
@@ -271,8 +302,28 @@ class ServerTests(unittest.TestCase):
             self.assertIn("Accept this input", page)
             self.assertNotIn("Count this as the pattern", page)
             self.assertIn("Paste the pattern.", page)
+            self.assertIn("HTML, PDF, or TXT", page)
+            self.assertIn("Choose an HTML, PDF, or TXT file", page)
+            self.assertIn(".html", page)
             self.assertNotIn("abbr-list", page)
             self.assertNotIn(">Abbreviations<", page)
+            sample = (SOURCES / "patterns/clearwater-lk150-fairisle-method-1.html").read_bytes()
+            html_file = Request(
+                f"http://127.0.0.1:{port}/file",
+                data=sample,
+                headers={
+                    "Content-Type": "text/html",
+                    "X-Filename": "clearwater-lk150-fairisle-method-1.html",
+                },
+            )
+            html_payload = json.loads(urlopen(html_file).read())
+            self.assertTrue(html_payload["ok"], html_payload)
+            self.assertEqual(
+                html_payload["source"],
+                "From clearwater-lk150-fairisle-method-1.html",
+            )
+            self.assertIn("Both Side Levers", html_payload["reading"])
+            self.assertNotIn("left out", html_payload["reading"])
             body = b"Glossary\nRC = row count\n\nKnit 2 rows.\n"
             request = Request(
                 f"http://127.0.0.1:{port}/file",

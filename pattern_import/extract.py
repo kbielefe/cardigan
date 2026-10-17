@@ -1,4 +1,4 @@
-"""Turn a page, a PDF, or a TXT file into the pattern's words and pictures.
+"""Turn a page, an HTML file, a PDF, or a TXT file into the pattern's words and pictures.
 
 A glossary stays in the reading with the rest of the pattern. Pictures from
 the pattern stay in place. Nothing here is resolved into passes.
@@ -20,7 +20,7 @@ from urllib.request import Request, urlopen
 
 MSG_FETCH = "This address did not come back. Check it, or paste the pattern."
 MSG_URL_TYPE = "Cardigan takes a page, a PDF, or a TXT file."
-MSG_FILE_TYPE = "Cardigan takes a PDF or a TXT file."
+MSG_FILE_TYPE = "Cardigan takes an HTML file, a PDF, or a TXT file."
 MSG_SCAN = (
     "This PDF has no selectable text. Cardigan does not read a scan. "
     "Paste the pattern."
@@ -909,14 +909,24 @@ def _looks_like_html(data: bytes) -> bool:
     return any(token in sample for token in (b"<html", b"<body", b"<article", b"<p", b"<div"))
 
 
+def _is_html_file(name: str, kind: str) -> bool:
+    if name.endswith(".html") or name.endswith(".htm"):
+        return True
+    return kind in {"text/html", "application/xhtml+xml"}
+
+
 def extract_bytes(data: bytes, filename: str, content_type: str) -> Result:
-    """A file the knitter chose. PDF and TXT only."""
+    """A file the knitter chose. HTML, PDF, and TXT."""
     name = filename.lower()
     kind = content_type.lower().split(";", 1)[0].strip()
     source = source_from_filename(filename)
     if data.startswith(b"%PDF") or name.endswith(".pdf") or kind == "application/pdf":
         return from_pdf(data, source)
-    if name.endswith(".txt") or kind == "text/plain":
+    if name.endswith(".txt"):
+        return from_text(data, source)
+    if _is_html_file(name, kind):
+        return from_html(data, source)
+    if kind == "text/plain":
         return from_text(data, source)
     return Result(ok=False, code="type", message=MSG_FILE_TYPE)
 

@@ -14,7 +14,7 @@
     <div class="tabs" role="tablist" aria-label="How the pattern comes in">
       <button type="button" role="tab" id="tab-paste" aria-controls="reading-wrap" aria-selected="true">Paste</button>
       <button type="button" role="tab" id="tab-url" aria-controls="url-panel" aria-selected="false" tabindex="-1">URL</button>
-      <button type="button" role="tab" id="tab-file" aria-controls="file-panel" aria-selected="false" tabindex="-1">PDF or TXT</button>
+      <button type="button" role="tab" id="tab-file" aria-controls="file-panel" aria-selected="false" tabindex="-1">HTML, PDF, or TXT</button>
     </div>
     <div class="control">
       <form id="url-panel" role="tabpanel" aria-labelledby="tab-url" hidden>
@@ -24,8 +24,8 @@
       </form>
       <div id="file-panel" role="tabpanel" aria-labelledby="tab-file" hidden>
         <label class="file" for="file">
-          <span id="file-label">Choose a PDF or TXT file</span>
-          <input id="file" type="file" accept=".pdf,.txt,application/pdf,text/plain">
+          <span id="file-label">Choose an HTML, PDF, or TXT file</span>
+          <input id="file" type="file" accept=".html,.htm,.pdf,.txt,text/html,application/pdf,text/plain">
         </label>
       </div>
     </div>
