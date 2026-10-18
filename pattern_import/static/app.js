@@ -1,4 +1,10 @@
 const FETCH_FAILED = "This address did not come back. Check it, or paste the pattern.";
+const PARSE_WORKING = "Parsing the reading…";
+const PARSE_DONE = "The reading is parsed.";
+const PARSE_FAILED = "The reading did not parse.";
+const MODEL_SILENT = "The model did not answer.";
+const ACCEPT_LABEL = "Accept this input";
+const RETRY_LABEL = "Try again";
 
 const tabs = [...document.querySelectorAll("[role='tab']")];
 const urlPanel = document.getElementById("url-panel");
@@ -22,6 +28,7 @@ let tab = "paste";
 let phase = "empty";
 let token = 0;
 let parts = null;
+let parseMessage = "";
 
 tabs.forEach((button, index) => {
   button.addEventListener("click", () => selectTab(nameOf(button)));
@@ -93,7 +100,7 @@ accept.addEventListener("click", () => {
   const text = frozenReading();
   const mine = ++token;
   phase = "parsing";
-  notice.textContent = "Parsing the reading…";
+  parseMessage = "";
   piecesEl.replaceChildren();
   render();
   fetch("/accept", {
@@ -101,25 +108,40 @@ accept.addEventListener("click", () => {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ reading: text }),
   })
-    .then((response) => response.json())
-    .then((payload) => {
+    .then((response) =>
+      response.json().then(
+        (payload) => ({ payload }),
+        () => ({ payload: null })
+      )
+    )
+    .then(({ payload }) => {
       if (mine !== token) return;
+      if (!payload || typeof payload !== "object") {
+        phase = "parse-failed";
+        parseMessage = MODEL_SILENT;
+        render();
+        accept.focus();
+        return;
+      }
       if (!payload.ok) {
         phase = "parse-failed";
-        notice.textContent = payload.message || "The reading did not parse.";
+        parseMessage = payload.message || PARSE_FAILED;
         render();
+        accept.focus();
         return;
       }
       phase = "parsed";
-      notice.textContent = "";
+      parseMessage = "";
       showPieces(payload.pieces || []);
       render();
+      piecesEl.scrollIntoView({ block: "nearest" });
     })
     .catch(() => {
       if (mine !== token) return;
       phase = "parse-failed";
-      notice.textContent = "The model did not answer.";
+      parseMessage = MODEL_SILENT;
       render();
+      accept.focus();
     });
 });
 
@@ -460,16 +482,25 @@ function reset() {
   tab = "paste";
   phase = "empty";
   parts = null;
+  parseMessage = "";
   partsEl.replaceChildren();
   piecesEl.replaceChildren();
   source.textContent = "";
   notice.textContent = "";
+  settled.textContent = "";
   reading.value = "";
   urlInput.value = "";
   fileInput.value = "";
   fileLabel.textContent = "Choose an HTML, PDF, or TXT file";
   sheet();
   reading.focus();
+}
+
+function settledText() {
+  if (phase === "parsing") return PARSE_WORKING;
+  if (phase === "parsed") return PARSE_DONE;
+  if (phase === "parse-failed") return parseMessage || PARSE_FAILED;
+  return "";
 }
 
 function render() {
@@ -494,8 +525,7 @@ function render() {
   source.hidden = source.textContent.trim() === "";
 
   const fetchNotice = phase === "working" || phase === "failed";
-  const parseNotice = phase === "parsing" || phase === "parse-failed";
-  notice.hidden = !(fetchNotice || parseNotice);
+  notice.hidden = !fetchNotice;
   const split = parts !== null;
   reading.hidden = split || (fetchNotice && tab !== "paste");
   if (phase === "working") reading.hidden = true;
@@ -506,11 +536,14 @@ function render() {
     area.readOnly = frozen();
   });
 
-  settled.hidden = !frozen();
+  const status = settledText();
+  settled.textContent = status;
+  settled.hidden = status === "";
+  accept.textContent = phase === "parse-failed" ? RETRY_LABEL : ACCEPT_LABEL;
   accept.hidden = phase === "parsing" || phase === "parsed";
   discard.hidden = frozen();
   another.hidden = phase !== "parsed" && phase !== "parse-failed";
-  accept.disabled = phase !== "parse-failed" && (phase !== "ready" || !hasInput());
+  accept.disabled = phase === "parsing" || (phase !== "parse-failed" && (phase !== "ready" || !hasInput()));
   discard.disabled = phase === "empty";
 }
 

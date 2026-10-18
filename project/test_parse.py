@@ -273,7 +273,12 @@ class AcceptTests(unittest.TestCase):
         page = urlopen(f"http://127.0.0.1:{self.port}/").read().decode()
         script = urlopen(f"http://127.0.0.1:{self.port}/app.js").read().decode()
         self.assertIn('id="pieces"', page)
+        self.assertIn('id="settled"', page)
+        self.assertIn('role="status"', page)
         self.assertIn("Parsing the reading…", script)
+        self.assertIn("The reading is parsed.", script)
+        self.assertIn("Try again", script)
+        self.assertIn("The model did not answer.", script)
         self.assertIn("Unparsed", script)
 
     def test_accept_on_the_wrap_sweater(self):

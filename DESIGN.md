@@ -231,7 +231,7 @@ A joined row inside one 1px madder rectangle. Each tab is square, transparent, m
 - **File:** The same edge and padding, quiet text, at least 38px tall. Focus inside the control draws the 2px madder ring.
 - **Reading:** No border, no fill, no padding, body type, line-height 1.45, madder caret, measure 68ch. It does not drag-resize. It grows with the text instead of scrolling inside the field. Notices above it use the body size, the same measure, and 12px under them. Pictures from the pattern sit in the reading, unboxed, on the paper, no wider than the measure. Pictures that share a vertical band sit in one row, each at its share of that width.
 
-The source line under the intake is quiet, label size, line-height 1.4. The settled confirmation is the note role, in ink, with 12px under it before the actions.
+The source line under the intake is quiet, label size, line-height 1.4. The settled line in the footer is the note role, in ink, with 12px under it before the actions. It is a live status: parsing, the parse error, or that the reading is parsed. Fetch errors stay in the notice above the reading.
 
 ### Bar
 
