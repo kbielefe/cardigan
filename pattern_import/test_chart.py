@@ -107,6 +107,7 @@ FAIRISLE = {
 }
 STITCH = {"K": (0, 0, 0), "W": (255, 255, 255), "G": (153, 153, 153)}
 RULE = (187, 187, 187)
+_AA_STITCH = {"K": (6, 4, 8), "W": (248, 248, 246), "R": (230, 12, 46)}
 
 
 def _rgb(hex_code: str) -> tuple[int, int, int]:
@@ -115,6 +116,46 @@ def _rgb(hex_code: str) -> tuple[int, int, int]:
 
 def _near(hex_code: str, color: tuple[int, int, int], limit: int = 8) -> bool:
     return all(abs(channel - target) <= limit for channel, target in zip(_rgb(hex_code), color, strict=True))
+
+
+def _aa_chart(pattern: tuple[str, ...], *, frame: int = 6, extra_col: bool = False) -> np.ndarray:
+    """A framed chart whose rules are thin, noisy gray instead of one flat color.
+
+    ``extra_col`` adds one white square past the last vertical rule, then a
+    thin border. That square is a stitch the rules do not enclose.
+    """
+    rows = len(pattern)
+    cols = len(pattern[0])
+    cell, rule = 11, 1
+    pitch = cell + rule
+    last_rule = frame + cols * pitch
+    height = frame + rows * pitch + rule + frame
+    width = last_rule + pitch + 2 if extra_col else last_rule + rule + frame
+    rng = np.random.default_rng(2)
+    image = np.empty((height, width, 3), dtype=np.int16)
+    image[:] = (36, 32, 40)
+    for _speck in range(80):
+        image[rng.integers(0, height), rng.integers(0, width)] = rng.integers(0, 255, size=3)
+    for row, line in enumerate(pattern):
+        for col, symbol in enumerate(line):
+            y0 = frame + rule + row * pitch
+            x0 = frame + rule + col * pitch
+            noise = rng.integers(-6, 7, size=(cell, cell, 3))
+            image[y0 : y0 + cell, x0 : x0 + cell] = _AA_STITCH[symbol] + noise
+        if extra_col:
+            y0 = frame + rule + row * pitch
+            x0 = last_rule + rule
+            noise = rng.integers(-6, 7, size=(cell, cell, 3))
+            image[y0 : y0 + cell, x0 : x0 + cell] = _AA_STITCH["W"] + noise
+    for index in range(rows + 1):
+        y = frame + index * pitch
+        gray = rng.integers(140, 210, size=(width, 1))
+        image[y, :, :] = gray
+    for index in range(cols + 1):
+        x = frame + index * pitch
+        gray = rng.integers(140, 210, size=(height, 1))
+        image[:, x, :] = gray
+    return np.clip(image, 0, 255).astype(np.uint8)
 
 
 def _png(image: np.ndarray) -> bytes:
@@ -183,6 +224,63 @@ class ChartTests(unittest.TestCase):
             if key not in FAIRISLE:
                 self.assertIsNone(item.chart, key)
                 self.assertNotIn("chart", item.as_dict())
+
+    def test_antialiased_rules_keep_the_squares(self):
+        pattern = (
+            "KWKWRWKW",
+            "WKWKRKWK",
+            "KKKKRKKK",
+            "WWWWRWWW",
+        )
+        chart = read_chart(_aa_chart(pattern))
+        self.assertIsNotNone(chart)
+        self.assertEqual(chart.grid.shape, (4, 8))
+        seen = {}
+        for row, line in enumerate(pattern):
+            for col, symbol in enumerate(line):
+                color = chart.colors[int(chart.grid[row, col])]
+                self.assertTrue(_near(color, _AA_STITCH[symbol], limit=24), color)
+                seen.setdefault(symbol, color)
+                self.assertTrue(_near(color, _rgb(seen[symbol]), limit=0))
+        self.assertEqual(len(chart.colors), 3)
+        for color in chart.colors.values():
+            self.assertFalse(_near(color, (36, 32, 40), limit=16))
+            self.assertFalse(_near(color, (170, 170, 170), limit=24))
+
+    def test_a_thick_frame_and_a_short_mark_stay_with_the_squares(self):
+        rows, cols = 10, 36
+        marked = {1, 4, 8}
+        mark = 17
+        pattern = []
+        for row in range(rows):
+            symbols = ["K" if (row + col) % 2 == 0 else "W" for col in range(cols)]
+            symbols[mark] = "R" if row in marked else "K"
+            pattern.append("".join(symbols))
+        chart = read_chart(_aa_chart(tuple(pattern), frame=10, extra_col=True))
+        self.assertIsNotNone(chart)
+        self.assertEqual(chart.grid.shape, (rows, cols + 1))
+        seen = {}
+        for row, line in enumerate(pattern):
+            for col, symbol in enumerate(line):
+                color = chart.colors[int(chart.grid[row, col])]
+                self.assertTrue(_near(color, _AA_STITCH[symbol], limit=24), (row, col, color))
+                seen.setdefault(symbol, color)
+                self.assertTrue(_near(color, _rgb(seen[symbol]), limit=0))
+        for row in range(rows):
+            color = chart.colors[int(chart.grid[row, cols])]
+            self.assertTrue(_near(color, _AA_STITCH["W"], limit=24), color)
+        self.assertEqual(len(chart.colors), 3)
+        self.assertEqual(len(seen), 3)
+        for color in chart.colors.values():
+            self.assertFalse(_near(color, (36, 32, 40), limit=16))
+            self.assertFalse(_near(color, (170, 170, 170), limit=24))
+
+    def test_a_wash_is_not_a_chart(self):
+        image = np.zeros((90, 140, 3), dtype=np.uint8)
+        image[:, :, 0] = np.linspace(20, 220, 140, dtype=np.uint8)
+        image[:, :, 1] = 180
+        image[:, :, 2] = 160
+        self.assertIsNone(read_chart(image))
 
     def test_rules_between_squares_are_not_a_color(self):
         cell = 18

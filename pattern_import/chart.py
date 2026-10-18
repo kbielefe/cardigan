@@ -19,6 +19,16 @@ from sklearn.metrics import silhouette_score
 BIN = 8
 NOISE = 0.01
 SAMPLE_LIMIT = 2000
+FLAT_CAP = 64
+AA_CAP = 128
+INK_LOW = 55
+INK_HIGH = 230
+INK_SAT = 40
+PEAK_INK = 0.28
+MERGE_DISTANCE = 40
+FRAME_LOW = 30
+FRAME_HIGH = 120
+FRAME_SAT = 40
 
 MSG_IMAGE = "Cardigan could not read this chart image."
 MSG_GRID = "A chart needs at least one row and one column."
@@ -77,39 +87,42 @@ def chart_from_image(
 def chart_size(image: str | Path | bytes | np.ndarray) -> tuple[int, int] | None:
     """Rows and columns when the rules between squares line up.
 
-    A photograph, a logo, or a mark that is not a grid of squares is None.
-    The count lets the page read a chart the knitter did not measure.
+    A flat chart is a few solid colors with solid rules. An anti-aliased
+    chart is a lattice of thin gray rules, and the count is the gaps
+    between those rules. A photograph, a logo, or a mark that is not a
+    grid of squares is None. The count lets the page read a chart the
+    knitter did not measure.
     """
     try:
         rgb = _load_rgb(image)
     except ValueError:
         return None
-    quantized = _quantize(rgb.reshape(-1, 3)).reshape(rgb.shape)
-    flat = quantized.reshape(-1, 3)
-    if len(flat) > 4000:
-        flat = flat[:: max(1, len(flat) // 4000)]
-    if len(np.unique(flat, axis=0)) > 16:
+    size = _flat_size(rgb)
+    if size is not None:
+        return size
+    spans = _rule_spans(rgb)
+    if spans is None:
         return None
-    height, width = quantized.shape[:2]
-    row_colors = [_majority(quantized[row]) for row in range(height)]
-    col_colors = [_majority(quantized[:, col]) for col in range(width)]
-    rule = _rule_color(row_colors, col_colors)
-    if rule is None:
-        return None
-    rows = _square_count([color == rule for color in row_colors])
-    cols = _square_count([color == rule for color in col_colors])
-    if rows is None or cols is None or rows < 2 or cols < 2 or rows > 64 or cols > 64:
-        return None
-    return rows, cols
+    return len(spans[0]), len(spans[1])
 
 
 def read_chart(image: str | Path | bytes | np.ndarray) -> Chart | None:
     """The color grid of a chart picture, or None when it is not a chart."""
-    size = chart_size(image)
-    if size is None:
+    try:
+        rgb = _load_rgb(image)
+    except ValueError:
+        return None
+    size = _flat_size(rgb)
+    if size is not None:
+        try:
+            return chart_from_image(rgb, size[0], size[1])
+        except ValueError:
+            return None
+    spans = _rule_spans(rgb)
+    if spans is None:
         return None
     try:
-        return chart_from_image(image, size[0], size[1])
+        return _chart_from_spans(rgb, spans[0], spans[1])
     except ValueError:
         return None
 
@@ -241,6 +254,257 @@ def _square_count(is_rule: list[bool]) -> int | None:
     if len(kept) < 2 or max(kept) > median * 2.5:
         return None
     return len(kept)
+
+
+def _flat_size(rgb: np.ndarray) -> tuple[int, int] | None:
+    quantized = _quantize(rgb.reshape(-1, 3)).reshape(rgb.shape)
+    flat = quantized.reshape(-1, 3)
+    if len(flat) > 4000:
+        flat = flat[:: max(1, len(flat) // 4000)]
+    if len(np.unique(flat, axis=0)) > 16:
+        return None
+    height, width = quantized.shape[:2]
+    row_colors = [_majority(quantized[row]) for row in range(height)]
+    col_colors = [_majority(quantized[:, col]) for col in range(width)]
+    rule = _rule_color(row_colors, col_colors)
+    if rule is None:
+        return None
+    rows = _square_count([color == rule for color in row_colors])
+    cols = _square_count([color == rule for color in col_colors])
+    if rows is None or cols is None or rows < 2 or cols < 2 or rows > FLAT_CAP or cols > FLAT_CAP:
+        return None
+    return rows, cols
+
+
+def _rule_spans(rgb: np.ndarray) -> tuple[list[tuple[float, float]], list[tuple[float, float]]] | None:
+    row_peaks, col_peaks = _rule_peaks(rgb)
+    col_spans = _spans(col_peaks, rgb.shape[1], single=False, rgb=rgb, axis=1)
+    if col_spans is None:
+        return None
+    row_spans = _spans(row_peaks, rgb.shape[0], single=True, rgb=rgb, axis=0)
+    if row_spans is None:
+        return None
+    return row_spans, col_spans
+
+
+def _rule_peaks(rgb: np.ndarray) -> tuple[list[int], list[int]]:
+    lum = rgb.astype(np.float32).mean(axis=2)
+    sat = rgb.max(axis=2).astype(np.float32) - rgb.min(axis=2).astype(np.float32)
+    ink = (sat <= INK_SAT) & (lum >= INK_LOW) & (lum <= INK_HIGH)
+    rows = _join_peaks(_ink_peaks(ink.mean(axis=1)), _dark_line_peaks(lum, 0))
+    cols = _join_peaks(_ink_peaks(ink.mean(axis=0)), _dark_line_peaks(lum, 1))
+    return rows, cols
+
+
+def _ink_peaks(frac: np.ndarray) -> list[int]:
+    peaks: list[int] = []
+    for index in range(1, len(frac) - 1):
+        if frac[index] < PEAK_INK:
+            continue
+        if frac[index] < frac[index - 1] or frac[index] < frac[index + 1]:
+            continue
+        if peaks and index - peaks[-1] <= 2:
+            if frac[index] > frac[peaks[-1]]:
+                peaks[-1] = index
+            continue
+        peaks.append(index)
+    return peaks
+
+
+def _dark_line_peaks(lum: np.ndarray, axis: int) -> list[int]:
+    if axis == 0:
+        spread = lum.std(axis=1)
+        med = np.median(lum, axis=1)
+    else:
+        spread = lum.std(axis=0)
+        med = np.median(lum, axis=0)
+    dark = (med < 85) & (spread < 45)
+    peaks: list[int] = []
+    start = 0
+    length = len(dark)
+    while start < length:
+        if not dark[start]:
+            start += 1
+            continue
+        end = start + 1
+        while end < length and dark[end]:
+            end += 1
+        width = end - start
+        if 1 <= width <= 2 and start > 0 and end < length:
+            core = float(med[start:end].max())
+            if med[start - 1] > core + 25 and med[end] > core + 25:
+                peaks.append(start + int(np.argmin(med[start:end])))
+        start = end
+    return peaks
+
+
+def _join_peaks(first: list[int], second: list[int]) -> list[int]:
+    joined: list[int] = []
+    for peak in sorted(set(first) | set(second)):
+        if joined and peak - joined[-1] <= 2:
+            continue
+        joined.append(peak)
+    return joined
+
+
+def _period(gaps: np.ndarray) -> float | None:
+    if len(gaps) < 2:
+        return None
+    mid = float(np.median(gaps))
+    if mid < 4:
+        return None
+    core = gaps[gaps >= mid * 0.7]
+    if len(core) < 2:
+        return None
+    period = float(np.median(core))
+    if period < 4:
+        return None
+    return period
+
+
+def _spans(
+    peaks: list[int],
+    length: int,
+    *,
+    single: bool,
+    rgb: np.ndarray,
+    axis: int,
+) -> list[tuple[float, float]] | None:
+    if len(peaks) < 2:
+        return None
+    gaps = np.diff(np.asarray(peaks, dtype=np.float64))
+    period = _period(gaps)
+    if period is None:
+        if single and len(gaps) == 1 and float(gaps[0]) >= 4:
+            return [(float(peaks[0]), float(peaks[1]))]
+        return None
+    bounds: list[tuple[float, float]] = []
+    lead = float(peaks[0])
+    if period * 0.65 <= lead <= period * 1.35 and _margin_is_stitch(rgb, axis, 0.0, lead):
+        bounds.append((0.0, lead))
+    for start, gap in zip(peaks, gaps):
+        if gap < period * 0.65:
+            continue
+        count = int(round(float(gap) / period))
+        if count < 1 or count > 3:
+            return None
+        if abs(float(gap) - count * period) > max(3.0, 0.35 * period * count):
+            return None
+        step = float(gap) / count
+        for index in range(count):
+            bounds.append((start + index * step, start + (index + 1) * step))
+    trail = float(length - peaks[-1])
+    trail_start = float(peaks[-1])
+    if period * 0.65 <= trail <= period * 1.35 and _margin_is_stitch(rgb, axis, trail_start, float(length)):
+        bounds.append((trail_start, float(length)))
+    if not bounds or len(bounds) > AA_CAP:
+        return None
+    if len(bounds) < 2 and not single:
+        return None
+    return bounds
+
+
+def _margin_is_stitch(rgb: np.ndarray, axis: int, start: float, end: float) -> bool:
+    """A band outside the outer rule is a square when its center is not frame ink."""
+    if axis == 0:
+        lo, hi = _inset(start, end, rgb.shape[0])
+        patch = rgb[lo:hi]
+    else:
+        lo, hi = _inset(start, end, rgb.shape[1])
+        patch = rgb[:, lo:hi]
+    if patch.size == 0:
+        return False
+    lum = patch.astype(np.float32).mean(axis=2)
+    sat = patch.max(axis=2).astype(np.float32) - patch.min(axis=2).astype(np.float32)
+    med = float(np.median(lum))
+    return not (FRAME_LOW <= med <= FRAME_HIGH and float(np.median(sat)) <= FRAME_SAT)
+
+
+def _chart_from_spans(
+    rgb: np.ndarray,
+    row_spans: list[tuple[float, float]],
+    col_spans: list[tuple[float, float]],
+) -> Chart:
+    samples = np.empty((len(row_spans), len(col_spans), 3), dtype=np.uint8)
+    for row, (y0, y1) in enumerate(row_spans):
+        ys, ye = _inset(y0, y1, rgb.shape[0])
+        for col, (x0, x1) in enumerate(col_spans):
+            xs, xe = _inset(x0, x1, rgb.shape[1])
+            patch = rgb[ys:ye, xs:xe]
+            if patch.size == 0:
+                raise ValueError(MSG_SMALL)
+            median = np.median(patch.reshape(-1, 3), axis=0)
+            samples[row, col] = np.clip(np.rint(median), 0, 255).astype(np.uint8)
+    palette = _merged_palette(samples)
+    grid = _indices(samples, palette)
+    colors = {index: _hex(color) for index, color in enumerate(palette)}
+    return Chart(grid=grid, colors=colors)
+
+
+def _inset(start: float, end: float, limit: int) -> tuple[int, int]:
+    lo = start + (end - start) * 0.3
+    hi = start + (end - start) * 0.7
+    left = max(0, min(limit - 1, int(np.floor(lo))))
+    right = max(left + 1, min(limit, int(np.ceil(hi))))
+    return left, right
+
+
+def _merged_palette(samples: np.ndarray) -> np.ndarray:
+    flat = samples.reshape(-1, 3)
+    colors, inverse, counts = np.unique(flat, axis=0, return_inverse=True, return_counts=True)
+    ids, centers = _group_ids(colors, counts)
+    grouped = ids[inverse].reshape(samples.shape[:2])
+    total = int(grouped.size)
+    keep: list[int] = []
+    for index in range(len(centers)):
+        mask = grouped == index
+        count = int(mask.sum())
+        share = float(mask.mean(axis=0).max()) if mask.size else 0.0
+        line = float(mask.mean(axis=1).max()) if mask.size else 0.0
+        if count >= total * NOISE or share >= 0.5 or line >= 0.5 or _straight_mark(mask):
+            keep.append(index)
+    if not keep:
+        sizes = [int((grouped == index).sum()) for index in range(len(centers))]
+        keep = [int(np.argmax(sizes))]
+    kept = np.clip(np.rint(centers[keep]), 0, 255).astype(np.uint8)
+    return _sort_colors(kept)
+
+
+def _straight_mark(mask: np.ndarray) -> bool:
+    """A few cells of one color are a drawn mark when they all share a line."""
+    total = int(mask.sum())
+    if total < 3:
+        return False
+    down = int(mask.sum(axis=0).max())
+    across = int(mask.sum(axis=1).max())
+    return down == total or across == total
+
+
+def _group_ids(colors: np.ndarray, counts: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    order = np.argsort(-counts)
+    centers: list[np.ndarray] = []
+    weights: list[float] = []
+    groups: list[list[int]] = []
+    for index in order:
+        color = colors[int(index)].astype(np.float64)
+        placed = False
+        for gid, center in enumerate(centers):
+            if np.max(np.abs(color - center)) <= MERGE_DISTANCE:
+                weight = weights[gid]
+                added = float(counts[int(index)])
+                centers[gid] = (center * weight + color * added) / (weight + added)
+                weights[gid] = weight + added
+                groups[gid].append(int(index))
+                placed = True
+                break
+        if not placed:
+            centers.append(color)
+            weights.append(float(counts[int(index)]))
+            groups.append([int(index)])
+    ids = np.empty(len(colors), dtype=np.int64)
+    for gid, members in enumerate(groups):
+        ids[members] = gid
+    return ids, np.stack(centers)
 
 
 def _center(start: int, end: int) -> tuple[int, int]:
