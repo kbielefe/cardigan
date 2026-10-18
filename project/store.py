@@ -31,6 +31,7 @@ CREATE TABLE IF NOT EXISTS piece (
     position INTEGER NOT NULL,
     name TEXT NOT NULL CHECK (length(name) > 0),
     copies INTEGER NOT NULL CHECK (copies >= 1),
+    parsed INTEGER NOT NULL CHECK (parsed IN (0, 1)),
     UNIQUE (project_id, position)
 );
 
@@ -171,6 +172,14 @@ WHEN NEW.last_pass_position >= (SELECT count(*) FROM pass WHERE size_id = NEW.si
 BEGIN
     SELECT RAISE(ABORT, 'repeat is outside the passes');
 END;
+
+CREATE TRIGGER IF NOT EXISTS unparsed_piece_has_no_sizes
+BEFORE INSERT ON size
+FOR EACH ROW
+WHEN (SELECT parsed FROM piece WHERE id = NEW.piece_id) = 0
+BEGIN
+    SELECT RAISE(ABORT, 'an unparsed piece has no sizes');
+END;
 """
 
 
@@ -233,8 +242,8 @@ def _child_ids(step: Pass) -> bool:
 def _insert_piece(db: sqlite3.Connection, project_id: int, position: int, piece: Piece) -> Piece:
     piece_id = _rowid(
         db.execute(
-            "INSERT INTO piece (project_id, position, name, copies) VALUES (?, ?, ?, ?)",
-            (project_id, position, piece.name, piece.copies),
+            "INSERT INTO piece (project_id, position, name, copies, parsed) VALUES (?, ?, ?, ?, ?)",
+            (project_id, position, piece.name, piece.copies, int(piece.parsed)),
         )
     )
     sizes = tuple(_insert_size(db, piece_id, index, size) for index, size in enumerate(piece.sizes))
@@ -355,7 +364,13 @@ def _insert_repeat(db: sqlite3.Connection, size_id: int, position: int, repeat: 
 
 def _load_piece(db: sqlite3.Connection, row: sqlite3.Row) -> Piece:
     sizes = tuple(_load_size(db, size) for size in _at(db, "size", "piece_id", row["id"]))
-    return Piece(name=row["name"], sizes=sizes, copies=row["copies"], id=row["id"])
+    return Piece(
+        name=row["name"],
+        sizes=sizes,
+        copies=row["copies"],
+        parsed=bool(row["parsed"]),
+        id=row["id"],
+    )
 
 
 def _load_size(db: sqlite3.Connection, row: sqlite3.Row) -> Size:

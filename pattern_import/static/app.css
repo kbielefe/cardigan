@@ -191,6 +191,20 @@ main {
   overflow-wrap: break-word;
 }
 
+#pieces {
+  max-width: 68ch;
+  margin-top: 16px;
+}
+
+#pieces p {
+  margin: 0 0 12px;
+}
+
+#pieces .unparsed {
+  font-size: 16px;
+  line-height: 1.4;
+}
+
 textarea[readonly] {
   color: var(--ink);
   background: transparent;

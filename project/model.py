@@ -292,12 +292,19 @@ class Piece:
     name: str
     sizes: tuple[Size, ...] = ()
     copies: int = 1
+    parsed: bool = True
     id: int | None = None
 
     def __post_init__(self) -> None:
         _text(self.name, "piece")
         _tuple(self.sizes, "sizes", Size)
         _int(self.copies, "copies", 1)
+        if type(self.parsed) is not bool:
+            raise ValueError("parsed must be true or false")
+        if not self.parsed and self.sizes:
+            raise ValueError("an unparsed piece has no sizes")
+        if self.parsed and not any(size.passes for size in self.sizes):
+            raise ValueError("a parsed piece has a pass")
         _id(self.id, "piece id")
 
 

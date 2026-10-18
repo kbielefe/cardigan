@@ -9,6 +9,7 @@ const readingWrap = document.getElementById("reading-wrap");
 const notice = document.getElementById("notice");
 const reading = document.getElementById("reading");
 const partsEl = document.getElementById("parts");
+const piecesEl = document.getElementById("pieces");
 const accept = document.getElementById("accept");
 const discard = document.getElementById("discard");
 const another = document.getElementById("another");
@@ -78,7 +79,7 @@ fileInput.addEventListener("change", () => {
 });
 
 reading.addEventListener("input", () => {
-  if (phase === "accepted" || phase === "working") return;
+  if (frozen() || phase === "working") return;
   fit(reading);
   if (phase === "empty" || phase === "failed") {
     phase = reading.value.trim() ? "ready" : "empty";
@@ -88,9 +89,38 @@ reading.addEventListener("input", () => {
 });
 
 accept.addEventListener("click", () => {
-  if (!hasInput()) return;
-  phase = "accepted";
+  if (phase === "parsing" || phase === "parsed" || !hasInput()) return;
+  const text = frozenReading();
+  const mine = ++token;
+  phase = "parsing";
+  notice.textContent = "Parsing the reading…";
+  piecesEl.replaceChildren();
   render();
+  fetch("/accept", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ reading: text }),
+  })
+    .then((response) => response.json())
+    .then((payload) => {
+      if (mine !== token) return;
+      if (!payload.ok) {
+        phase = "parse-failed";
+        notice.textContent = payload.message || "The reading did not parse.";
+        render();
+        return;
+      }
+      phase = "parsed";
+      notice.textContent = "";
+      showPieces(payload.pieces || []);
+      render();
+    })
+    .catch(() => {
+      if (mine !== token) return;
+      phase = "parse-failed";
+      notice.textContent = "The model did not answer.";
+      render();
+    });
 });
 
 discard.addEventListener("click", reset);
@@ -244,7 +274,7 @@ function renderGrid(grid) {
     el.setAttribute("aria-label", "Reading");
     el.addEventListener("input", () => {
       cell.text = el.value;
-      if (phase === "accepted" || phase === "working") return;
+      if (frozen() || phase === "working") return;
       phase = hasInput() ? "ready" : "empty";
       render();
     });
@@ -289,7 +319,7 @@ function showParts(list) {
       area.setAttribute("aria-label", "Reading");
       area.addEventListener("input", () => {
         part.text = area.value;
-        if (phase === "accepted" || phase === "working") return;
+        if (frozen() || phase === "working") return;
         fit(area);
         phase = hasInput() ? "ready" : "empty";
         render();
@@ -388,12 +418,50 @@ async function begin(run) {
   sheet();
 }
 
+function frozen() {
+  return phase === "parsing" || phase === "parsed" || phase === "parse-failed";
+}
+
+function frozenReading() {
+  if (!parts) return reading.value;
+  return parts.map(partText).filter((text) => text.trim() !== "").join("\n\n");
+}
+
+function partText(part) {
+  if (part.kind === "text") return part.text || "";
+  if (part.kind !== "grid") return "";
+  return (part.cells || [])
+    .filter((cell) => cell.kind === "text")
+    .map((cell) => cell.text || "")
+    .filter((text) => text.trim() !== "")
+    .join("\n\n");
+}
+
+function showPieces(list) {
+  piecesEl.replaceChildren();
+  list.forEach((piece) => {
+    const block = document.createElement("p");
+    block.append(piece.name);
+    block.append(document.createElement("br"));
+    if (piece.parsed) {
+      block.append((piece.sizes || []).join(", "));
+    } else {
+      const mark = document.createElement("span");
+      mark.className = "unparsed";
+      mark.textContent = "Unparsed";
+      block.append(mark);
+    }
+    piecesEl.append(block);
+  });
+}
+
 function reset() {
   token += 1;
   tab = "paste";
   phase = "empty";
   parts = null;
   partsEl.replaceChildren();
+  piecesEl.replaceChildren();
   source.textContent = "";
   notice.textContent = "";
   reading.value = "";
@@ -425,23 +493,24 @@ function render() {
 
   source.hidden = source.textContent.trim() === "";
 
-  const showNotice = phase === "working" || phase === "failed";
-  notice.hidden = !showNotice;
+  const fetchNotice = phase === "working" || phase === "failed";
+  const parseNotice = phase === "parsing" || phase === "parse-failed";
+  notice.hidden = !(fetchNotice || parseNotice);
   const split = parts !== null;
-  reading.hidden = split || (showNotice && tab !== "paste");
+  reading.hidden = split || (fetchNotice && tab !== "paste");
   if (phase === "working") reading.hidden = true;
-  partsEl.hidden = !split || phase === "working" || (showNotice && tab !== "paste");
-  reading.readOnly = phase === "accepted";
+  partsEl.hidden = !split || phase === "working" || (fetchNotice && tab !== "paste");
+  piecesEl.hidden = phase !== "parsed";
+  reading.readOnly = frozen();
   partsEl.querySelectorAll("textarea").forEach((area) => {
-    area.readOnly = phase === "accepted";
+    area.readOnly = frozen();
   });
 
-  const accepted = phase === "accepted";
-  settled.hidden = !accepted;
-  accept.hidden = accepted;
-  discard.hidden = accepted;
-  another.hidden = !accepted;
-  accept.disabled = phase !== "ready" || !hasInput();
+  settled.hidden = !frozen();
+  accept.hidden = phase === "parsing" || phase === "parsed";
+  discard.hidden = frozen();
+  another.hidden = phase !== "parsed" && phase !== "parse-failed";
+  accept.disabled = phase !== "parse-failed" && (phase !== "ready" || !hasInput());
   discard.disabled = phase === "empty";
 }
 

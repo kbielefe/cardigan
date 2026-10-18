@@ -19,6 +19,8 @@ from pattern_import.extract import (
     extract_bytes,
     fetch_url,
 )
+from project.parse import ParseFailure, parse_reading
+from project.store import connect
 
 STATIC = Path(__file__).resolve().parent / "static"
 TYPES = {
@@ -56,7 +58,45 @@ class Handler(BaseHTTPRequestHandler):
             kind = self.headers.get("Content-Type", "")
             self._json(extract_bytes(body, name, kind).as_dict())
             return
+        if path == "/accept":
+            self._json(self._accept(body))
+            return
         self.send_error(404)
+
+    def _accept(self, body: bytes) -> dict:
+        try:
+            payload = json.loads(body)
+            reading = payload["reading"]
+        except (json.JSONDecodeError, KeyError, TypeError):
+            return {"ok": False, "message": "The reading did not parse."}
+        if type(reading) is not str:
+            return {"ok": False, "message": "The reading did not parse."}
+        db = connect(self.server.db_path)
+        try:
+            project = parse_reading(reading, self._complete(), db)
+        except ParseFailure as exc:
+            return {"ok": False, "message": str(exc)}
+        finally:
+            db.close()
+        return {
+            "ok": True,
+            "pieces": [
+                {
+                    "name": piece.name,
+                    "copies": piece.copies,
+                    "parsed": piece.parsed,
+                    "sizes": [size.name for size in piece.sizes],
+                }
+                for piece in project.pieces
+            ],
+        }
+
+    def _complete(self):
+        if self.server.complete is not None:
+            return self.server.complete
+        from project.complete import complete
+
+        return complete
 
     def _fetch(self, body: bytes) -> Result:
         try:
@@ -82,8 +122,11 @@ class Handler(BaseHTTPRequestHandler):
         return
 
 
-def make_server(port: int = 0) -> ThreadingHTTPServer:
-    return ThreadingHTTPServer(("127.0.0.1", port), Handler)
+def make_server(port: int = 0, db_path: str | Path | None = None, complete=None) -> ThreadingHTTPServer:
+    server = ThreadingHTTPServer(("127.0.0.1", port), Handler)
+    server.db_path = Path("cardigan.sqlite") if db_path is None else Path(db_path)
+    server.complete = complete
+    return server
 
 
 def main():
