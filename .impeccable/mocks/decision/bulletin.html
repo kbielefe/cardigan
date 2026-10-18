@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Cardigan — the change, in type</title>
+<style>
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { width: 1440px; height: 900px; overflow: hidden; }
+  body { font-family: system-ui, sans-serif; background: #F7F4EE; color: #1C1C1C; display: flex; flex-direction: column; }
+  header { height: 64px; background: #8C2F2F; color: #F7F4EE; display: flex; align-items: baseline; gap: 24px; padding: 0 32px; }
+  header strong { font-size: 22px; font-weight: 650; }
+  header span { font-size: 18px; font-weight: 400; }
+  .warn { margin: 16px 32px 0; background: #F3E6E4; border: 1px solid #8C2F2F; padding: 10px 14px; font-size: 18px; line-height: 1.35; }
+  .bed { display: flex; align-items: flex-end; gap: 3px; height: 168px; }
+  .bed i { display: block; flex: 1 1 0; min-width: 0; }
+  .bed i.a { height: 36px; background: #D9D0C4; }
+  .bed i.b { height: 78px; background: #1C1C1C; }
+  .bed i.d { height: 132px; background: #8C2F2F; }
+  .ruler { display: flex; justify-content: space-between; border-top: 1px solid #1C1C1C; padding-top: 6px; }
+  .ruler b { font-size: 14px; font-weight: 400; color: #5C534A; }
+  .legend { display: flex; gap: 18px; font-size: 16px; color: #5C534A; padding-top: 8px; }
+  .legend em { font-style: normal; color: #8C2F2F; font-weight: 600; }
+  .levers { display: flex; flex-wrap: wrap; gap: 8px; padding-top: 12px; }
+  .levers span, .chip { border: 1px solid #D9D0C4; background: #fff; padding: 8px 12px; font-size: 16px; }
+  .levers .chg, .chip.chg { border-color: #8C2F2F; background: #F3E6E4; color: #8C2F2F; font-weight: 600; }
+  .pedal { margin-top: auto; padding: 14px 32px 18px; font-size: 16px; color: #5C534A; }
+
+  .split { flex: 1; display: flex; min-height: 0; padding: 20px 32px 0; gap: 32px; }
+  .words { flex: 1.15; display: flex; flex-direction: column; justify-content: center; gap: 18px; }
+  .words h2 { font-size: 44px; font-weight: 650; line-height: 1.05; letter-spacing: -0.02em; }
+  .words h2.open { color: #8C2F2F; }
+  .words p { font-size: 18px; color: #5C534A; }
+  .check { flex: 0.95; display: flex; flex-direction: column; justify-content: flex-end; border-left: 1px solid #D9D0C4; padding-left: 28px; }
+  .check .bed { height: 200px; }
+  .cap { padding: 14px 32px 0; font-size: 18px; line-height: 1.4; max-width: 95ch; }
+</style>
+</head>
+<body>
+  <header><strong>Cardigan</strong><span>Body · XS–M · LK150</span><span>Select needles</span></header>
+  <div class="split">
+    <div class="words">
+      <p>Changed since Knit 2 rows</p>
+      <h2>Every 4th needle to D</h2>
+      <h2>Edge needles to D</h2>
+      <h2>Russel levers to I</h2>
+      <h2 class="open">Extra needle’s side is open</h2>
+      <p>Side levers stay on the triangle. RC stays 2. This pass has no carriage end.</p>
+    </div>
+    <div class="check">
+      <p class="legend"><em>Madder changed</em><span>D hold</span><span>B working</span></p>
+      <div class="bed"><i class="a"></i><i class="a"></i><i class="a"></i><i class="a"></i><i class="d"></i><i class="b"></i><i class="b"></i><i class="b"></i><i class="d"></i><i class="b"></i><i class="b"></i><i class="b"></i><i class="d"></i><i class="b"></i><i class="b"></i><i class="b"></i><i class="d"></i><i class="b"></i><i class="b"></i><i class="b"></i><i class="d"></i><i class="b"></i><i class="b"></i><i class="b"></i><i class="d"></i><i class="b"></i><i class="b"></i><i class="b"></i><i class="d"></i><i class="b"></i><i class="b"></i><i class="b"></i><i class="d"></i><i class="b"></i><i class="b"></i><i class="b"></i><i class="d"></i><i class="b"></i><i class="b"></i><i class="b"></i><i class="d"></i><i class="b"></i><i class="b"></i><i class="b"></i><i class="d"></i><i class="b"></i><i class="b"></i><i class="b"></i><i class="d"></i><i class="b"></i><i class="b"></i><i class="b"></i><i class="d"></i><i class="b"></i><i class="b"></i><i class="b"></i><i class="d"></i><i class="a"></i><i class="a"></i><i class="a"></i><i class="a"></i></div>
+      <div class="ruler"><b>−30</b><b>0</b><b>30</b></div>
+    </div>
+  </div>
+  <p class="cap">Pull edge needles out to hold position. Pull every 4th needle out to hold position, leaving 3 needles in between in working position. Make sure carriage is set not to knit the needles in hold position when moved both ways. Knit 3 rows.</p>
+  <p class="pedal">Pedal · next pass · previous pass</p>
+</body>
+</html>
