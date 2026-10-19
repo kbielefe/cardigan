@@ -80,6 +80,9 @@ class Handler(BaseHTTPRequestHandler):
             self._sse_start()
             self._sse({"type": "error", "ok": False, "message": "The reading did not parse."})
             return
+        charts = payload.get("charts") if type(payload) is dict else None
+        if charts is not None and type(charts) is not list:
+            charts = None
         self._sse_start()
         chars = 0
 
@@ -88,9 +91,23 @@ class Handler(BaseHTTPRequestHandler):
             chars += len(text)
             self._sse({"type": "delta", "chars": chars})
 
+        def on_stage(name: str) -> None:
+            self._sse({"type": "stage", "name": name})
+
+        def on_piece_ready(info: dict) -> None:
+            self._sse({"type": "piece_ready", **info})
+
         db = connect(self.server.db_path)
         try:
-            project = parse_reading(reading, self._complete(on_delta), db)
+            project = parse_reading(
+                reading,
+                self._complete(on_delta),
+                db,
+                charts=charts,
+                on_stage=on_stage,
+                on_piece_ready=on_piece_ready,
+                on_delta=on_delta,
+            )
         except ParseFailure as exc:
             self._sse({"type": "error", "ok": False, "message": str(exc)})
             return
@@ -117,7 +134,7 @@ class Handler(BaseHTTPRequestHandler):
             return self.server.complete
         from project.complete import complete
 
-        return lambda reading: complete(reading, on_delta=on_delta)
+        return complete
 
     def _sse_start(self) -> None:
         self.send_response(200)

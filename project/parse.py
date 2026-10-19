@@ -22,9 +22,8 @@ from project.model import (
     Size,
     Yarn,
 )
-from project.store import save_project
 
-Complete = Callable[[str], dict]
+Complete = Callable[..., dict]
 
 _ENDS = {
     "left": re.compile(r"\bleft\b|\bcol\b", re.IGNORECASE),
@@ -37,16 +36,44 @@ class ParseFailure(Exception):
     """The call failed. The accepted reading is still the reading."""
 
 
-def parse_reading(reading: str, complete: Complete, db: sqlite3.Connection) -> Project:
-    if type(reading) is not str or not reading.strip():
-        raise ParseFailure("The reading did not parse.")
-    try:
-        payload = complete(reading)
-    except ParseFailure:
-        raise
-    except Exception as exc:
-        raise ParseFailure("The model did not answer.") from exc
-    return save_project(db, _project(reading, payload))
+def parse_reading(
+    reading: str,
+    complete: Complete,
+    db: sqlite3.Connection,
+    *,
+    charts: list | None = None,
+    on_stage=None,
+    on_piece_ready=None,
+    on_delta=None,
+) -> Project:
+    """Run the staged parse pipeline. ``complete`` is the per-call LLM function."""
+    from project.pipeline import run
+
+    return run(
+        reading,
+        db,
+        complete=complete,
+        charts=charts,
+        on_stage=on_stage,
+        on_piece_ready=on_piece_ready,
+        on_delta=on_delta,
+    )
+
+
+def build_size_passes(reading: str, payload: object) -> tuple[tuple[Pass, ...], tuple[Repeat, ...]]:
+    """Build passes and repeats from a stage payload that has cite strings."""
+    if type(payload) is not dict:
+        raise ValueError("passes")
+    raw_passes = payload.get("passes")
+    if type(raw_passes) is not list or not raw_passes:
+        raise ValueError("passes")
+    cursor = 0
+    passes = []
+    for item in raw_passes:
+        step, cursor = _pass(reading, item, cursor)
+        passes.append(step)
+    repeats = tuple(_repeat(item) for item in payload.get("repeats") or ())
+    return tuple(passes), repeats
 
 
 def _project(reading: str, payload: object) -> Project:

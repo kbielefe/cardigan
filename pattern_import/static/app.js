@@ -5,6 +5,16 @@ const PARSE_FAILED = "The reading did not parse.";
 const MODEL_SILENT = "The model did not answer.";
 const ACCEPT_LABEL = "Accept this input";
 const RETRY_LABEL = "Try again";
+const STAGE_LABELS = {
+  bootstrap: "Starting…",
+  metadata: "Naming the pattern…",
+  pieces: "Finding pieces…",
+  vocabulary: "Reading abbreviations…",
+  sizes: "Reading sizes…",
+  sections: "Reading sections…",
+  passes: "Building passes…",
+  charts: "Reading charts…",
+};
 
 const tabs = [...document.querySelectorAll("[role='tab']")];
 const urlPanel = document.getElementById("url-panel");
@@ -97,7 +107,7 @@ reading.addEventListener("input", () => {
 
 accept.addEventListener("click", () => {
   if (phase === "parsing" || phase === "parsed" || !hasInput()) return;
-  const text = frozenReading();
+  const payload = acceptPayload();
   const mine = ++token;
   phase = "parsing";
   parseMessage = "";
@@ -106,7 +116,7 @@ accept.addEventListener("click", () => {
   fetch("/accept", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ reading: text }),
+    body: JSON.stringify(payload),
   })
     .then((response) => readAccept(response, mine))
     .catch(() => {
@@ -146,10 +156,20 @@ async function readAccept(response, mine) {
       } catch {
         continue;
       }
+      if (event.type === "stage") {
+        parseMessage = STAGE_LABELS[event.name] || PARSE_WORKING;
+        render();
+        continue;
+      }
+      if (event.type === "piece_ready") {
+        continue;
+      }
       if (event.type === "delta") {
         const chars = event.chars || 0;
-        parseMessage = chars ? `${PARSE_WORKING} (${formatChars(chars)})` : PARSE_WORKING;
-        render();
+        if (!parseMessage || parseMessage === PARSE_WORKING) {
+          parseMessage = chars ? `${PARSE_WORKING} (${formatChars(chars)})` : PARSE_WORKING;
+          render();
+        }
         continue;
       }
       if (event.type === "error" || (event.type === "done" && !event.ok)) {
@@ -479,9 +499,41 @@ function frozen() {
   return phase === "parsing" || phase === "parsed" || phase === "parse-failed";
 }
 
+function acceptPayload() {
+  return { reading: frozenReading(), charts: frozenCharts() };
+}
+
 function frozenReading() {
   if (!parts) return reading.value;
   return parts.map(partText).filter((text) => text.trim() !== "").join("\n\n");
+}
+
+function frozenCharts() {
+  if (!parts) return [];
+  const charts = [];
+  parts.forEach((part) => {
+    if (part.kind === "grid") {
+      const labels = partText(part);
+      (part.cells || []).forEach((cell) => {
+        if (cell.kind === "image" && cell.chart && cell.chart.grid) {
+          charts.push({
+            grid: cell.chart.grid,
+            colors: cell.chart.colors || {},
+            labels,
+          });
+        }
+      });
+      return;
+    }
+    if (part.kind === "image" && part.chart && part.chart.grid) {
+      charts.push({
+        grid: part.chart.grid,
+        colors: part.chart.colors || {},
+        labels: "",
+      });
+    }
+  });
+  return charts;
 }
 
 function partText(part) {
