@@ -1,4 +1,4 @@
-"""Ask the model to read a frozen pattern. The key is read from .env."""
+"""Ask the model with a per-call schema, system prompt, and effort. The key is from .env."""
 
 from __future__ import annotations
 
@@ -29,20 +29,8 @@ from project.parse import ParseFailure
 URL = "https://api.x.ai/v1/chat/completions"
 MODEL = "grok-4.7"
 TIMEOUT = 900
+EFFORTS = ("low", "medium", "high")
 _log = logging.getLogger("cardigan")
-
-SYSTEM = """You turn one frozen knitting reading into pieces, sizes, and passes.
-
-Use the shared actions only. Do not name a machine, a needle letter, or a lever.
-
-A pass is one setup or one trip. Consecutive identical trips are one pass with a count. "Knit N rows" and "K N rows" are one trip. The count is the number for that size.
-
-The first number in a group is the first size. The next sizes sit in parentheses, and the largest sit in square brackets. A parenthesis of words, such as (make 2), is the copies of that piece.
-
-Each pass cites an exact span of the reading, copied unchanged. When the reading does not settle a point, leave it open. An extra needle with no side named uses open_point extra_needle_side and no side. A trip with no carriage end named has a null carriage end. Do not fill either in.
-
-Seaming, blocking, construction, and how to wrap are not passes. Those pieces are parsed false and have no sizes. A section you cannot turn into passes is parsed false, with its heading. A parsed piece has a size for each size in the reading, and each size has its passes.
-"""
 
 OnDelta = Callable[[str], None]
 
@@ -55,8 +43,12 @@ def read_key(path: Path | None = None) -> str:
 
 
 def complete(
-    reading: str,
+    content: str,
     *,
+    schema: dict,
+    system: str,
+    reasoning_effort: str = "medium",
+    schema_name: str = "result",
     key: str | None = None,
     post: Callable[[dict, str], dict] | None = None,
     on_delta: OnDelta | None = None,
@@ -64,24 +56,27 @@ def complete(
     token = read_key() if key is None else key
     if not token:
         raise ParseFailure("The model key is not set.")
+    if reasoning_effort not in EFFORTS:
+        raise ValueError(f"reasoning_effort must be one of: {', '.join(EFFORTS)}")
     payload = {
         "model": MODEL,
         "messages": [
-            {"role": "system", "content": SYSTEM},
-            {"role": "user", "content": reading},
+            {"role": "system", "content": system},
+            {"role": "user", "content": content},
         ],
         "response_format": {
             "type": "json_schema",
-            "json_schema": {"name": "project", "strict": True, "schema": schema()},
+            "json_schema": {"name": schema_name, "strict": True, "schema": schema},
         },
+        "reasoning_effort": reasoning_effort,
     }
     if post is None:
         body = _post(payload, token, on_delta)
     else:
         body = post(payload, token)
     try:
-        content = body["choices"][0]["message"]["content"]
-        parsed = json.loads(content)
+        message = body["choices"][0]["message"]["content"]
+        parsed = json.loads(message)
     except (KeyError, TypeError, json.JSONDecodeError) as exc:
         raise ParseFailure("The reading did not parse.") from exc
     if type(parsed) is not dict:
@@ -89,7 +84,31 @@ def complete(
     return parsed
 
 
+def pass_schema() -> dict:
+    """Schema for one size's passes and repeats."""
+    return _object(
+        passes={"type": "array", "items": _pass_item()},
+        repeats={"type": "array", "items": _repeat_item()},
+    )
+
+
 def schema() -> dict:
+    """Full project schema (pieces with nested sizes). Kept for tests and tooling."""
+    size = _object(
+        name={"type": "string"},
+        passes={"type": "array", "items": _pass_item()},
+        repeats={"type": "array", "items": _repeat_item()},
+    )
+    piece = _object(
+        name={"type": "string"},
+        copies={"type": "integer", "minimum": 1},
+        parsed={"type": "boolean"},
+        sizes={"type": "array", "items": size},
+    )
+    return _object(pieces={"type": "array", "items": piece})
+
+
+def _pass_item() -> dict:
     selection = _object(
         role=_enum(ROLES),
         method=_enum(METHODS),
@@ -108,7 +127,7 @@ def schema() -> dict:
     )
     yarn = _object(place=_enum(YARN_PLACES), name=_nullable("string"))
     counter = _object(kind=_enum(COUNTERS), value={"type": "integer", "minimum": 0})
-    step = _object(
+    return _object(
         kind=_enum(KINDS),
         count={"type": "integer", "minimum": 1},
         cite={"type": "string"},
@@ -121,23 +140,14 @@ def schema() -> dict:
         shapes={"type": "array", "items": shape},
         yarns={"type": "array", "items": yarn},
     )
-    repeat = _object(
+
+
+def _repeat_item() -> dict:
+    return _object(
         first={"type": "integer", "minimum": 0},
         last={"type": "integer", "minimum": 0},
         times={"type": "integer", "minimum": 2},
     )
-    size = _object(
-        name={"type": "string"},
-        passes={"type": "array", "items": step},
-        repeats={"type": "array", "items": repeat},
-    )
-    piece = _object(
-        name={"type": "string"},
-        copies={"type": "integer", "minimum": 1},
-        parsed={"type": "boolean"},
-        sizes={"type": "array", "items": size},
-    )
-    return _object(pieces={"type": "array", "items": piece})
 
 
 def _post(payload: dict, key: str, on_delta: OnDelta | None = None) -> dict:
