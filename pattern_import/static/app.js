@@ -11,7 +11,7 @@ const STAGE_LABELS = {
   pieces: "Finding pieces…",
   vocabulary: "Reading abbreviations…",
   sizes: "Reading sizes…",
-  sections: "Reading sections…",
+  sections: "Splitting the pattern…",
   passes: "Building passes…",
   charts: "Reading charts…",
 };
@@ -182,7 +182,7 @@ async function readAccept(response, mine) {
       if (event.type === "done") {
         phase = "parsed";
         parseMessage = "";
-        showPieces(event.pieces || []);
+        showPieces(event.sections ? event.sections.map(sectionLine) : event.pieces || []);
         render();
         piecesEl.scrollIntoView({ block: "nearest" });
         return;
@@ -546,15 +546,21 @@ function partText(part) {
     .join("\n\n");
 }
 
+function sectionLine(text) {
+  const line = String(text).trim().split("\n")[0];
+  return { name: line, parsed: true, sizes: [] };
+}
+
 function showPieces(list) {
   piecesEl.replaceChildren();
   list.forEach((piece) => {
     const block = document.createElement("p");
     block.append(piece.name);
-    block.append(document.createElement("br"));
-    if (piece.parsed) {
-      block.append((piece.sizes || []).join(", "));
-    } else {
+    if (piece.parsed && (piece.sizes || []).length) {
+      block.append(document.createElement("br"));
+      block.append(piece.sizes.join(", "));
+    } else if (!piece.parsed) {
+      block.append(document.createElement("br"));
       const mark = document.createElement("span");
       mark.className = "unparsed";
       mark.textContent = "Unparsed";

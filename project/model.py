@@ -300,6 +300,19 @@ class Abbreviation:
 
 
 @dataclass(frozen=True)
+class Section:
+    """One verbatim span of the pattern. Joined in order, the sections are the reading."""
+
+    text: str
+    id: int | None = None
+
+    def __post_init__(self) -> None:
+        if type(self.text) is not str or self.text == "":
+            raise ValueError("section must be text")
+        _id(self.id, "section id")
+
+
+@dataclass(frozen=True)
 class Piece:
     name: str
     sizes: tuple[Size, ...] = ()
@@ -322,6 +335,7 @@ class Piece:
 class Project:
     reading: str
     pieces: tuple[Piece, ...] = ()
+    sections: tuple[Section, ...] = ()
     name: str | None = None
     id: int | None = None
 
@@ -330,6 +344,7 @@ class Project:
             raise ValueError("reading must be text")
         _optional_text(self.name, "project name")
         _tuple(self.pieces, "pieces", Piece)
+        _tuple(self.sections, "sections", Section)
         _id(self.id, "project id")
         limit = len(self.reading)
         for piece in self.pieces:

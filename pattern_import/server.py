@@ -117,6 +117,7 @@ class Handler(BaseHTTPRequestHandler):
             {
                 "type": "done",
                 "ok": True,
+                "sections": [section.text for section in project.sections],
                 "pieces": [
                     {
                         "name": piece.name,

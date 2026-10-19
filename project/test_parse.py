@@ -12,8 +12,8 @@ from urllib.request import Request, urlopen
 from pattern_import.extract import extract_bytes
 from pattern_import.server import make_server
 from project.complete import complete, pass_schema, read_key, schema
-from project.model import Piece
-from project.parse import ParseFailure, parse_reading
+from project.model import Section
+from project.parse import ParseFailure, build_size_passes, parse_reading
 from project.store import connect, load_project
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -115,6 +115,12 @@ def _stage_complete(reading: str, wrap: dict, *, fail_at: str | None = None):
             raise ParseFailure("The model did not answer.")
         if schema_name == "metadata":
             return {"name": "Wrap Sweater Scarf"}
+        if schema_name == "sections":
+            marker = "\nBody\n"
+            if marker in content:
+                at = content.index(marker)
+                return {"sections": [content[:at], content[at:]]}
+            return {"sections": [content]}
         if schema_name == "pieces":
             return {
                 "pieces": [
@@ -168,130 +174,100 @@ class ParseTests(unittest.TestCase):
     def tearDown(self):
         self.db.close()
 
-    def test_wrap_sweater_keeps_body_and_sleeve(self):
-        for name in SIZES:
-            self.assertIn(name, self.reading)
+    def test_wrap_sweater_splits_into_sections(self):
         stored = parse_reading(self.reading, _stage_complete(self.reading, self.wrap), self.db)
         self.assertEqual(load_project(self.db, stored.id), stored)
         self.assertEqual(stored.name, "Wrap Sweater Scarf")
-        body, sleeve, wrap = stored.pieces
-        self.assertEqual(body.name, "Body")
-        self.assertEqual(sleeve.name, "Sleeve")
-        self.assertEqual(sleeve.copies, 2)
-        self.assertEqual(wrap.name, "How to Wrap")
-        self.assertFalse(wrap.parsed)
-        self.assertEqual(wrap.sizes, ())
-        for piece in (body, sleeve):
-            self.assertTrue(piece.parsed)
-            self.assertEqual(tuple(size.name for size in piece.sizes), SIZES)
-            for size in piece.sizes:
-                self.assertGreaterEqual(len(size.passes), 1)
-                for step in size.passes:
-                    quoted = stored.reading[step.cite_start : step.cite_end]
-                    self.assertTrue(quoted)
-                    self.assertEqual(quoted, self.reading[step.cite_start : step.cite_end])
-        cast = body.sizes[0].passes[0]
-        self.assertEqual(cast.open_point, "extra_needle_side")
-        self.assertTrue(all(item.side is None for item in cast.selections))
-        self.assertNotIn("machine", json.dumps(_public(stored)))
+        self.assertEqual("".join(section.text for section in stored.sections), self.reading)
+        self.assertGreaterEqual(len(stored.sections), 2)
+        self.assertTrue(stored.sections[1].text.startswith("\nBody\n"))
+        self.assertEqual(stored.pieces, ())
 
     def test_failed_call_after_bootstrap_leaves_the_project(self):
         with self.assertRaises(ParseFailure) as caught:
             parse_reading(
                 self.reading,
-                _stage_complete(self.reading, self.wrap, fail_at="vocabulary"),
+                _stage_complete(self.reading, self.wrap, fail_at="sections"),
                 self.db,
             )
         self.assertEqual(str(caught.exception), "The model did not answer.")
         self.assertEqual(self.db.execute("SELECT count(*) FROM project").fetchone()[0], 1)
         stored = load_project(self.db, 1)
         self.assertEqual(stored.name, "Wrap Sweater Scarf")
-        self.assertGreaterEqual(len(stored.pieces), 1)
+        self.assertEqual(stored.sections, ())
 
     def test_failed_call_before_answer_still_raises(self):
         with self.assertRaises(ParseFailure) as caught:
             parse_reading(self.reading, _crash, self.db)
         self.assertEqual(str(caught.exception), "The model did not answer.")
 
-    def test_a_piece_that_does_not_parse_is_unparsed(self):
-        payload = _wrap_payload(self.reading)
-        for size in payload["pieces"][1]["sizes"]:
-            size["passes"][0]["cite"] = "this sentence is not in the reading"
-        stored = parse_reading(self.reading, _stage_complete(self.reading, payload), self.db)
-        self.assertEqual([piece.name for piece in stored.pieces], ["Body", "Sleeve", "How to Wrap"])
-        self.assertTrue(stored.pieces[0].parsed)
-        self.assertFalse(stored.pieces[1].parsed)
-        self.assertEqual(stored.pieces[1].sizes, ())
-        self.assertFalse(stored.pieces[2].parsed)
+    def test_a_section_outside_the_reading_leaves_the_project(self):
+        def respond(content, **_kwargs):
+            if _kwargs.get("schema_name") == "metadata":
+                return {"name": "Wrap"}
+            return {"sections": ["this sentence is not in the reading"]}
+
+        with self.assertRaises(ParseFailure):
+            parse_reading(self.reading, respond, self.db)
+        self.assertEqual(self.db.execute("SELECT count(*) FROM project").fetchone()[0], 1)
+        stored = load_project(self.db, 1)
+        self.assertEqual(stored.sections, ())
+
+    def test_dropped_blank_lines_stay_in_the_sections(self):
+        reading = "Gauge:\n4 inches\n\nBody\nKnit 2 rows."
+
+        def respond(content, **_kwargs):
+            if _kwargs.get("schema_name") == "metadata":
+                return {"name": "Gauge swatch"}
+            return {"sections": ["Gauge:\n4 inches", "Body\nKnit 2 rows."]}
+
+        stored = parse_reading(reading, respond, self.db)
+        self.assertEqual("".join(section.text for section in stored.sections), reading)
+        self.assertEqual(stored.sections[0].text, "Gauge:\n4 inches\n\n")
+        self.assertEqual(stored.sections[1].text, "Body\nKnit 2 rows.")
 
     def test_every_piece_failing_stores_the_project_row(self):
-        payload = {
-            "pieces": [{"name": "Body", "copies": 1, "parsed": True, "sizes": []}],
-        }
         with self.assertRaises(ParseFailure):
-            parse_reading("Knit 2 rows.", _stage_complete("Knit 2 rows.", payload, fail_at="pieces"), self.db)
+            parse_reading("Knit 2 rows.", _stage_complete("Knit 2 rows.", self.wrap, fail_at="sections"), self.db)
         self.assertEqual(self.db.execute("SELECT count(*) FROM project").fetchone()[0], 1)
 
     def test_an_unnamed_end_stays_open(self):
-        payload = {
-            "pieces": [
-                {
-                    "name": "Body",
-                    "copies": 1,
-                    "parsed": True,
-                    "sizes": [
-                        {
-                            "name": "XS-M",
-                            "passes": [_pass("trip", "Knit 2 rows.", count=2, carriage_end="left")],
-                            "repeats": [],
-                        }
-                    ],
-                }
-            ]
-        }
-        stored = parse_reading("Knit 2 rows.", _stage_complete("Knit 2 rows.", payload), self.db)
-        step = stored.pieces[0].sizes[0].passes[0]
-        self.assertIsNone(step.carriage_end)
-        self.assertEqual(step.open_point, "carriage_end")
+        passes, _repeats = build_size_passes(
+            "Knit 2 rows.",
+            {"passes": [_pass("trip", "Knit 2 rows.", count=2, carriage_end="left")], "repeats": []},
+        )
+        self.assertIsNone(passes[0].carriage_end)
+        self.assertEqual(passes[0].open_point, "carriage_end")
 
     def test_an_unnamed_extra_needle_stays_open(self):
         quote = "1 additional needle in work"
-        payload = {
-            "pieces": [
-                {
-                    "name": "Body",
-                    "copies": 1,
-                    "parsed": True,
-                    "sizes": [
-                        {
-                            "name": "XS-M",
-                            "passes": [
-                                _pass(
-                                    "setup",
-                                    quote,
-                                    selections=[{"role": "working", "method": "extra", "count": 1, "side": "left"}],
-                                )
-                            ],
-                            "repeats": [],
-                        }
-                    ],
-                }
-            ]
-        }
-        stored = parse_reading(quote + ".", _stage_complete(quote + ".", payload), self.db)
-        step = stored.pieces[0].sizes[0].passes[0]
-        self.assertEqual(step.open_point, "extra_needle_side")
-        self.assertIsNone(step.selections[0].side)
+        passes, _repeats = build_size_passes(
+            quote + ".",
+            {
+                "passes": [
+                    _pass(
+                        "setup",
+                        quote,
+                        selections=[{"role": "working", "method": "extra", "count": 1, "side": "left"}],
+                    )
+                ],
+                "repeats": [],
+            },
+        )
+        self.assertEqual(passes[0].open_point, "extra_needle_side")
+        self.assertIsNone(passes[0].selections[0].side)
 
-    def test_unparsed_piece_round_trips(self):
-        payload = {"pieces": [{"name": "How to Wrap", "copies": 1, "parsed": False, "sizes": []}]}
+    def test_sections_round_trip(self):
         stored = parse_reading(
             "How to Wrap:\nFold it.",
-            _stage_complete("How to Wrap:\nFold it.", payload),
+            _stage_complete("How to Wrap:\nFold it.", self.wrap),
             self.db,
         )
         self.assertEqual(load_project(self.db, stored.id), stored)
-        self.assertEqual(stored.pieces, (Piece(name="How to Wrap", parsed=False, id=stored.pieces[0].id),))
+        self.assertEqual(
+            stored.sections,
+            (Section(text="How to Wrap:\nFold it.", id=stored.sections[0].id),),
+        )
 
     def test_stage_events_fire_in_order(self):
         seen = []
@@ -301,11 +277,7 @@ class ParseTests(unittest.TestCase):
             self.db,
             on_stage=seen.append,
         )
-        self.assertEqual(
-            seen[:6],
-            ["bootstrap", "metadata", "pieces", "vocabulary", "sizes", "sections"],
-        )
-        self.assertIn("passes", seen)
+        self.assertEqual(seen, ["bootstrap", "metadata", "sections"])
 
 
 class CompleteTests(unittest.TestCase):
@@ -391,7 +363,7 @@ class AcceptTests(unittest.TestCase):
         self.assertIn("readAccept", script)
         self.assertIn("STAGE_LABELS", script)
         self.assertIn("frozenCharts", script)
-        self.assertIn("Finding pieces…", script)
+        self.assertIn("Splitting the pattern…", script)
 
     def test_accept_on_the_wrap_sweater(self):
         reading = _reading()
@@ -399,20 +371,15 @@ class AcceptTests(unittest.TestCase):
         self.wrap = _wrap_payload(reading)
         body = self._post(reading)
         self.assertTrue(body["ok"], body)
-        self.assertEqual(body["pieces"][0]["name"], "Body")
-        self.assertEqual(body["pieces"][0]["sizes"], list(SIZES))
-        self.assertTrue(body["pieces"][0]["parsed"])
-        self.assertEqual(body["pieces"][1]["name"], "Sleeve")
-        self.assertEqual(body["pieces"][1]["copies"], 2)
-        self.assertEqual(body["pieces"][1]["sizes"], list(SIZES))
-        self.assertEqual(body["pieces"][2], {"name": "How to Wrap", "copies": 1, "parsed": False, "sizes": []})
+        self.assertEqual("".join(body["sections"]), reading)
+        self.assertGreaterEqual(len(body["sections"]), 2)
         db = connect(self.path)
         try:
             stored = load_project(db, 1)
         finally:
             db.close()
         self.assertEqual(stored.reading, reading)
-        self.assertGreaterEqual(len(stored.pieces[0].sizes[0].passes), 1)
+        self.assertEqual(tuple(section.text for section in stored.sections), tuple(body["sections"]))
 
     def test_failed_accept_leaves_partial_project(self):
         reading = "Knit 2 rows."
@@ -427,7 +394,7 @@ class AcceptTests(unittest.TestCase):
                 }
             ]
         }
-        self.fail_at = "sizes"
+        self.fail_at = "sections"
         body = self._post(reading)
         self.assertFalse(body["ok"])
         self.assertEqual(body["message"], "The model did not answer.")
@@ -444,17 +411,17 @@ class AcceptTests(unittest.TestCase):
     def test_partial_accept_lists_the_unparsed_piece(self):
         reading = _reading()
         self.reading = reading
-        payload = _wrap_payload(reading)
-        for size in payload["pieces"][1]["sizes"]:
-            size["passes"][0]["cite"] = "missing sentence"
-        self.wrap = payload
+        self.wrap = _wrap_payload(reading)
+
+        def respond(content, **kwargs):
+            if kwargs.get("schema_name") == "sections":
+                return {"sections": ["missing sentence"]}
+            return _stage_complete(reading, self.wrap)(content, **kwargs)
+
+        self.server.complete = respond
         body = self._post(reading)
-        self.assertTrue(body["ok"], body)
-        self.assertEqual(body["pieces"][0]["name"], "Body")
-        self.assertTrue(body["pieces"][0]["parsed"])
-        self.assertEqual(body["pieces"][1]["name"], "Sleeve")
-        self.assertFalse(body["pieces"][1]["parsed"])
-        self.assertEqual(body["pieces"][1]["sizes"], [])
+        self.assertFalse(body["ok"])
+        self.assertEqual(body["message"], "The reading did not parse.")
 
     def test_accept_sse_includes_stage_events(self):
         reading = _reading()
@@ -465,8 +432,7 @@ class AcceptTests(unittest.TestCase):
         self.assertIn("stage", types)
         self.assertEqual(events[-1]["type"], "done")
         names = [event["name"] for event in events if event["type"] == "stage"]
-        self.assertEqual(names[0], "bootstrap")
-        self.assertIn("passes", names)
+        self.assertEqual(names, ["bootstrap", "metadata", "sections"])
 
     def _post(self, reading: str, charts=None) -> dict:
         events = self._events(reading, charts=charts)

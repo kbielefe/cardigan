@@ -14,6 +14,7 @@ from project.model import (
     Project,
     Repeat,
     RowCounter,
+    Section,
     Selection,
     Shape,
     Size,
@@ -33,6 +34,14 @@ CREATE TABLE IF NOT EXISTS abbreviation (
     position INTEGER NOT NULL,
     abbr TEXT NOT NULL CHECK (length(trim(abbr)) > 0),
     expansion TEXT NOT NULL CHECK (length(trim(expansion)) > 0),
+    UNIQUE (project_id, position)
+);
+
+CREATE TABLE IF NOT EXISTS section (
+    id INTEGER PRIMARY KEY,
+    project_id INTEGER NOT NULL REFERENCES project (id) ON DELETE CASCADE,
+    position INTEGER NOT NULL,
+    text TEXT NOT NULL CHECK (length(text) > 0),
     UNIQUE (project_id, position)
 );
 
@@ -232,6 +241,34 @@ def set_project_name(db: sqlite3.Connection, project_id: int, name: str | None) 
             raise LookupError(f"no project {project_id}")
 
 
+def save_sections(db: sqlite3.Connection, project_id: int, sections: tuple[Section, ...]) -> tuple[Section, ...]:
+    prepare(db)
+    if any(item.id is not None for item in sections):
+        raise ValueError("save sections inserts new rows")
+    with db:
+        if db.execute("SELECT id FROM project WHERE id = ?", (project_id,)).fetchone() is None:
+            raise LookupError(f"no project {project_id}")
+        db.execute("DELETE FROM section WHERE project_id = ?", (project_id,))
+        stored = []
+        for index, item in enumerate(sections):
+            item_id = _rowid(
+                db.execute(
+                    "INSERT INTO section (project_id, position, text) VALUES (?, ?, ?)",
+                    (project_id, index, item.text),
+                )
+            )
+            stored.append(replace(item, id=item_id))
+    return tuple(stored)
+
+
+def load_sections(db: sqlite3.Connection, project_id: int) -> tuple[Section, ...]:
+    prepare(db)
+    return tuple(
+        Section(text=row["text"], id=row["id"])
+        for row in _at(db, "section", "project_id", project_id)
+    )
+
+
 def replace_pieces(db: sqlite3.Connection, project_id: int, pieces: tuple[Piece, ...]) -> tuple[Piece, ...]:
     prepare(db)
     _fresh_pieces(pieces)
@@ -328,7 +365,8 @@ def save_project(db: sqlite3.Connection, project: Project) -> Project:
             )
         )
         pieces = tuple(_insert_piece(db, project_id, index, piece) for index, piece in enumerate(project.pieces))
-    return replace(project, id=project_id, pieces=pieces)
+        sections = tuple(_insert_section(db, project_id, index, item) for index, item in enumerate(project.sections))
+    return replace(project, id=project_id, pieces=pieces, sections=sections)
 
 
 def load_project(db: sqlite3.Connection, project_id: int) -> Project:
@@ -340,11 +378,24 @@ def load_project(db: sqlite3.Connection, project_id: int) -> Project:
         _load_piece(db, piece)
         for piece in _at(db, "piece", "project_id", row["id"])
     )
-    return Project(reading=row["reading"], pieces=pieces, name=row["name"], id=row["id"])
+    sections = load_sections(db, row["id"])
+    return Project(reading=row["reading"], pieces=pieces, sections=sections, name=row["name"], id=row["id"])
+
+
+def _insert_section(db: sqlite3.Connection, project_id: int, position: int, item: Section) -> Section:
+    item_id = _rowid(
+        db.execute(
+            "INSERT INTO section (project_id, position, text) VALUES (?, ?, ?)",
+            (project_id, position, item.text),
+        )
+    )
+    return replace(item, id=item_id)
 
 
 def _new(project: Project) -> None:
     if project.id is not None:
+        raise ValueError("save inserts a new project")
+    if any(item.id is not None for item in project.sections):
         raise ValueError("save inserts a new project")
     _fresh_pieces(project.pieces)
 
