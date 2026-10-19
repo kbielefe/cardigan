@@ -2,7 +2,17 @@
 
 Cardigan turns a written knitting pattern into carriage passes for the Silver Reed LK150 or the Taitexma TH-160 in front of the knitter. The same pattern word can name different levers and needle letters on each machine. `DOMAIN.md` is the authority for that resolution.
 
-The working page is pattern import. Paste a pattern, give its address, or choose an HTML, PDF, or TXT file. The page keeps the pattern's own words. Pictures stay in place, and a chart picture becomes a grid of its colors. Accept freezes that reading and sends it to the model. The model key is `XAI_API_KEY` in a `.env` file at the repo root. A parsed project is stored in `cardigan.sqlite` in the working directory.
+The working page is pattern import. Paste a pattern, give its address, or choose an HTML, PDF, or TXT file. The page keeps the pattern's own words. Pictures stay in place, and a chart picture becomes a grid of its colors. Accept freezes that reading and sends it to the model. Keys live in a `.env` file at the repo root: `XAI_API_KEY` for the model, and optional OpenTelemetry settings to export traces, metrics, and logs. The server turns telemetry on itself when `OTEL_EXPORTER_OTLP_ENDPOINT` is set — you do not need the `opentelemetry-instrument` wrapper. A parsed project is stored in `cardigan.sqlite` in the working directory.
+
+OpenTelemetry `.env` keys (standard names):
+
+- `OTEL_SERVICE_NAME` — defaults in code to `cardigan` when unset
+- `OTEL_EXPORTER_OTLP_ENDPOINT` — collector base URL, e.g. `http://127.0.0.1:4318`
+- `OTEL_EXPORTER_OTLP_PROTOCOL` — `http/protobuf` (required for Cardigan's exporter)
+- `OTEL_RESOURCE_ATTRIBUTES` — e.g. `deployment.environment=dev`
+- `OTEL_TRACES_SAMPLER` — defaults to `parentbased_always_on` (100%); use `parentbased_traceidratio` with `OTEL_TRACES_SAMPLER_ARG` (e.g. `0.1`) to sample
+
+What is instrumented: inbound HTTP, outbound urllib (pattern fetch and LLM), sqlite3, chart reads, plus LLM-specific spans/metrics on model calls.
 
 ## Run
 
@@ -24,7 +34,7 @@ uv run python -m pattern_import.chart IMAGE ROWS COLS
 ## Test
 
 ```
-uv run python -m unittest project.test_store project.test_parse pattern_import.test_extract pattern_import.test_chart
+uv run python -m unittest project.test_store project.test_parse project.test_otel pattern_import.test_extract pattern_import.test_chart
 ```
 
 ## Reading

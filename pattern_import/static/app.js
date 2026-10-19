@@ -108,34 +108,7 @@ accept.addEventListener("click", () => {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ reading: text }),
   })
-    .then((response) =>
-      response.json().then(
-        (payload) => ({ payload }),
-        () => ({ payload: null })
-      )
-    )
-    .then(({ payload }) => {
-      if (mine !== token) return;
-      if (!payload || typeof payload !== "object") {
-        phase = "parse-failed";
-        parseMessage = MODEL_SILENT;
-        render();
-        accept.focus();
-        return;
-      }
-      if (!payload.ok) {
-        phase = "parse-failed";
-        parseMessage = payload.message || PARSE_FAILED;
-        render();
-        accept.focus();
-        return;
-      }
-      phase = "parsed";
-      parseMessage = "";
-      showPieces(payload.pieces || []);
-      render();
-      piecesEl.scrollIntoView({ block: "nearest" });
-    })
+    .then((response) => readAccept(response, mine))
     .catch(() => {
       if (mine !== token) return;
       phase = "parse-failed";
@@ -145,6 +118,68 @@ accept.addEventListener("click", () => {
     });
 });
 
+async function readAccept(response, mine) {
+  if (!response.ok || !response.body) {
+    if (mine !== token) return;
+    phase = "parse-failed";
+    parseMessage = MODEL_SILENT;
+    render();
+    accept.focus();
+    return;
+  }
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    const parts = buffer.split("\n\n");
+    buffer = parts.pop() || "";
+    for (const part of parts) {
+      if (mine !== token) return;
+      const line = part.split("\n").find((row) => row.startsWith("data:"));
+      if (!line) continue;
+      let event;
+      try {
+        event = JSON.parse(line.slice(5).trim());
+      } catch {
+        continue;
+      }
+      if (event.type === "delta") {
+        const chars = event.chars || 0;
+        parseMessage = chars ? `${PARSE_WORKING} (${formatChars(chars)})` : PARSE_WORKING;
+        render();
+        continue;
+      }
+      if (event.type === "error" || (event.type === "done" && !event.ok)) {
+        phase = "parse-failed";
+        parseMessage = event.message || PARSE_FAILED;
+        render();
+        accept.focus();
+        return;
+      }
+      if (event.type === "done") {
+        phase = "parsed";
+        parseMessage = "";
+        showPieces(event.pieces || []);
+        render();
+        piecesEl.scrollIntoView({ block: "nearest" });
+        return;
+      }
+    }
+  }
+  if (mine !== token) return;
+  phase = "parse-failed";
+  parseMessage = MODEL_SILENT;
+  render();
+  accept.focus();
+}
+
+function formatChars(chars) {
+  if (chars < 1000) return String(chars);
+  return `${(chars / 1000).toFixed(chars < 10000 ? 1 : 0)}k`;
+}
 discard.addEventListener("click", reset);
 another.addEventListener("click", reset);
 
@@ -497,7 +532,7 @@ function reset() {
 }
 
 function settledText() {
-  if (phase === "parsing") return PARSE_WORKING;
+  if (phase === "parsing") return parseMessage || PARSE_WORKING;
   if (phase === "parsed") return PARSE_DONE;
   if (phase === "parse-failed") return parseMessage || PARSE_FAILED;
   return "";

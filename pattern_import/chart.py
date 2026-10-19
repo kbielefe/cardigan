@@ -71,17 +71,23 @@ def chart_from_image(
     The grid is row-major from the top of the image. ``colors`` maps each
     index to a hex code.
     """
+    from project import otel
+
     rows = _count(num_rows, MSG_GRID)
     cols = _count(num_cols, MSG_GRID)
     limit = _count(max_k, MSG_COLORS)
     if limit < 2:
         raise ValueError(MSG_COLORS)
-    rgb = _load_rgb(image)
-    samples = _cell_colors(rgb, rows, cols)
-    palette = _palette(samples.reshape(-1, 3), limit)
-    grid = _indices(samples, palette)
-    colors = {index: _hex(color) for index, color in enumerate(palette)}
-    return Chart(grid=grid, colors=colors)
+    with otel.operation(
+        "chart.from_image",
+        {"chart.rows": rows, "chart.cols": cols, "chart.max_colors": limit},
+    ):
+        rgb = _load_rgb(image)
+        samples = _cell_colors(rgb, rows, cols)
+        palette = _palette(samples.reshape(-1, 3), limit)
+        grid = _indices(samples, palette)
+        colors = {index: _hex(color) for index, color in enumerate(palette)}
+        return Chart(grid=grid, colors=colors)
 
 
 def chart_size(image: str | Path | bytes | np.ndarray) -> tuple[int, int] | None:
@@ -129,6 +135,9 @@ def read_chart(image: str | Path | bytes | np.ndarray) -> Chart | None:
 
 def main(argv: list[str] | None = None) -> int:
     """Print a chart's color grid from an image path, rows, and columns."""
+    from project import otel
+
+    otel.setup()
     parser = argparse.ArgumentParser(description="Turn a knitting chart image into a color grid.")
     parser.add_argument("image_path")
     parser.add_argument("num_rows", type=int)
@@ -136,16 +145,19 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--max-k", type=int, default=6)
     args = parser.parse_args(argv)
     try:
-        chart = chart_from_image(args.image_path, args.num_rows, args.num_cols, args.max_k)
-    except (OSError, ValueError) as error:
-        print(error, file=sys.stderr)
-        return 1
-    for row in chart.grid.tolist():
-        print(" ".join(str(value) for value in row))
-    print()
-    for index in sorted(chart.colors):
-        print(f"{index} {chart.colors[index]}")
-    return 0
+        try:
+            chart = chart_from_image(args.image_path, args.num_rows, args.num_cols, args.max_k)
+        except (OSError, ValueError) as error:
+            print(error, file=sys.stderr)
+            return 1
+        for row in chart.grid.tolist():
+            print(" ".join(str(value) for value in row))
+        print()
+        for index in sorted(chart.colors):
+            print(f"{index} {chart.colors[index]}")
+        return 0
+    finally:
+        otel.shutdown()
 
 
 def _count(value: int, message: str) -> int:

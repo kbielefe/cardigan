@@ -280,6 +280,8 @@ class AcceptTests(unittest.TestCase):
         self.assertIn("Try again", script)
         self.assertIn("The model did not answer.", script)
         self.assertIn("Unparsed", script)
+        self.assertIn("readAccept", script)
+        self.assertIn("formatChars", script)
 
     def test_accept_on_the_wrap_sweater(self):
         reading = _reading()
@@ -333,7 +335,17 @@ class AcceptTests(unittest.TestCase):
             headers={"Content-Type": "application/json"},
             method="POST",
         )
-        return json.loads(urlopen(request).read())
+        raw = urlopen(request).read().decode()
+        events = []
+        for block in raw.split("\n\n"):
+            line = next((row for row in block.split("\n") if row.startswith("data:")), None)
+            if line is None:
+                continue
+            events.append(json.loads(line[5:].strip()))
+        self.assertTrue(events, raw)
+        final = events[-1]
+        self.assertIn(final["type"], {"done", "error"}, final)
+        return final
 
 
 def _refuse(reading: str) -> dict:

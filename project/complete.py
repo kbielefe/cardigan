@@ -3,11 +3,14 @@
 from __future__ import annotations
 
 import json
+import logging
 from collections.abc import Callable
 from pathlib import Path
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
+from project import otel
+from project.env import env_value
 from project.model import (
     COUNTERS,
     ENDS,
@@ -23,9 +26,10 @@ from project.model import (
 )
 from project.parse import ParseFailure
 
-ROOT = Path(__file__).resolve().parents[1]
 URL = "https://api.x.ai/v1/chat/completions"
 MODEL = "grok-4.7"
+TIMEOUT = 900
+_log = logging.getLogger("cardigan")
 
 SYSTEM = """You turn one frozen knitting reading into pieces, sizes, and passes.
 
@@ -40,31 +44,23 @@ Each pass cites an exact span of the reading, copied unchanged. When the reading
 Seaming, blocking, construction, and how to wrap are not passes. Those pieces are parsed false and have no sizes. A section you cannot turn into passes is parsed false, with its heading. A parsed piece has a size for each size in the reading, and each size has its passes.
 """
 
+OnDelta = Callable[[str], None]
+
 
 def read_key(path: Path | None = None) -> str:
-    env = ROOT / ".env" if path is None else path
-    if not env.is_file():
-        raise ParseFailure("The model key is not set.")
-    for raw in env.read_text(encoding="utf-8").splitlines():
-        line = raw.strip()
-        if not line or line.startswith("#"):
-            continue
-        if line.startswith("export "):
-            line = line[len("export ") :].strip()
-        if "=" not in line:
-            continue
-        name, value = line.split("=", 1)
-        if name.strip() != "XAI_API_KEY":
-            continue
-        value = value.strip()
-        if len(value) >= 2 and value[0] == value[-1] and value[0] in {'"', "'"}:
-            value = value[1:-1]
-        if value:
-            return value
+    value = env_value("XAI_API_KEY", path)
+    if value:
+        return value
     raise ParseFailure("The model key is not set.")
 
 
-def complete(reading: str, *, key: str | None = None, post: Callable[[dict, str], dict] | None = None) -> dict:
+def complete(
+    reading: str,
+    *,
+    key: str | None = None,
+    post: Callable[[dict, str], dict] | None = None,
+    on_delta: OnDelta | None = None,
+) -> dict:
     token = read_key() if key is None else key
     if not token:
         raise ParseFailure("The model key is not set.")
@@ -79,8 +75,10 @@ def complete(reading: str, *, key: str | None = None, post: Callable[[dict, str]
             "json_schema": {"name": "project", "strict": True, "schema": schema()},
         },
     }
-    send = _post if post is None else post
-    body = send(payload, token)
+    if post is None:
+        body = _post(payload, token, on_delta)
+    else:
+        body = post(payload, token)
     try:
         content = body["choices"][0]["message"]["content"]
         parsed = json.loads(content)
@@ -142,22 +140,63 @@ def schema() -> dict:
     return _object(pieces={"type": "array", "items": piece})
 
 
-def _post(payload: dict, key: str) -> dict:
+def _post(payload: dict, key: str, on_delta: OnDelta | None = None) -> dict:
+    outbound = {**payload, "stream": True}
+    body = json.dumps(outbound)
+    _log.debug("llm request %s", body)
     request = Request(
         URL,
-        data=json.dumps(payload).encode("utf-8"),
+        data=body.encode("utf-8"),
         headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"},
         method="POST",
     )
-    try:
-        with urlopen(request, timeout=180) as response:
-            return json.loads(response.read().decode("utf-8"))
-    except HTTPError as exc:
-        if exc.code in {401, 403}:
-            raise ParseFailure("The model key was refused.") from None
-        raise ParseFailure("The model refused the reading.") from None
-    except (TimeoutError, URLError, json.JSONDecodeError):
-        raise ParseFailure("The model did not answer.") from None
+    with otel.llm_request(MODEL, URL):
+        try:
+            with urlopen(request, timeout=TIMEOUT) as response:
+                content = _read_stream(response, on_delta)
+            _log.debug("llm response %s", content)
+            return {"choices": [{"message": {"content": content}}]}
+        except HTTPError as exc:
+            err_body = ""
+            try:
+                err_body = exc.read().decode("utf-8", errors="replace")
+            except Exception:
+                pass
+            _log.debug("llm HTTP %s response %s", exc.code, err_body)
+            if exc.code in {401, 403}:
+                raise ParseFailure("The model key was refused.") from None
+            raise ParseFailure("The model refused the reading.") from None
+        except (TimeoutError, URLError) as exc:
+            _log.debug("llm transport error: %s", exc)
+            raise ParseFailure("The model did not answer.") from None
+        except json.JSONDecodeError as exc:
+            _log.debug("llm JSON error: %s", exc)
+            raise ParseFailure("The model did not answer.") from None
+
+
+def _read_stream(response, on_delta: OnDelta | None) -> str:
+    parts: list[str] = []
+    for raw in response:
+        line = raw.decode("utf-8") if isinstance(raw, bytes) else raw
+        line = line.strip()
+        if not line.startswith("data:"):
+            continue
+        data = line[5:].strip()
+        if data == "[DONE]":
+            break
+        chunk = json.loads(data)
+        try:
+            delta = chunk["choices"][0]["delta"]
+        except (KeyError, IndexError, TypeError):
+            continue
+        for key in ("reasoning_content", "content"):
+            text = delta.get(key)
+            if type(text) is str and text:
+                if key == "content":
+                    parts.append(text)
+                if on_delta is not None:
+                    on_delta(text)
+    return "".join(parts)
 
 
 def _enum(values: tuple[str, ...]) -> dict:
