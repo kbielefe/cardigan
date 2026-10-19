@@ -1,6 +1,7 @@
 """A machine-independent knitting project."""
 
 from project.model import (
+    Abbreviation,
     CarriageSetting,
     Pass,
     Piece,
@@ -12,9 +13,21 @@ from project.model import (
     Size,
     Yarn,
 )
-from project.store import connect, load_project, save_project
+from project.store import (
+    connect,
+    create_project,
+    insert_sizes,
+    load_abbreviations,
+    load_project,
+    replace_pieces,
+    replace_size_passes,
+    save_abbreviations,
+    save_project,
+    set_project_name,
+)
 
 __all__ = [
+    "Abbreviation",
     "CarriageSetting",
     "Pass",
     "Piece",
@@ -26,6 +39,13 @@ __all__ = [
     "Size",
     "Yarn",
     "connect",
+    "create_project",
+    "insert_sizes",
+    "load_abbreviations",
     "load_project",
+    "replace_pieces",
+    "replace_size_passes",
+    "save_abbreviations",
     "save_project",
+    "set_project_name",
 ]

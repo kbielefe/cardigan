@@ -7,6 +7,7 @@ from dataclasses import replace
 from pathlib import Path
 
 from project.model import (
+    Abbreviation,
     CarriageSetting,
     Pass,
     Piece,
@@ -22,7 +23,17 @@ from project.model import (
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS project (
     id INTEGER PRIMARY KEY,
-    reading TEXT NOT NULL
+    reading TEXT NOT NULL,
+    name TEXT
+);
+
+CREATE TABLE IF NOT EXISTS abbreviation (
+    id INTEGER PRIMARY KEY,
+    project_id INTEGER NOT NULL REFERENCES project (id) ON DELETE CASCADE,
+    position INTEGER NOT NULL,
+    abbr TEXT NOT NULL CHECK (length(trim(abbr)) > 0),
+    expansion TEXT NOT NULL CHECK (length(trim(expansion)) > 0),
+    UNIQUE (project_id, position)
 );
 
 CREATE TABLE IF NOT EXISTS piece (
@@ -193,6 +204,117 @@ def prepare(db: sqlite3.Connection) -> None:
     db.row_factory = sqlite3.Row
     db.execute("PRAGMA foreign_keys = ON")
     db.executescript(SCHEMA)
+    _migrate(db)
+
+
+def _migrate(db: sqlite3.Connection) -> None:
+    columns = {row["name"] for row in db.execute("PRAGMA table_info(project)")}
+    if "name" not in columns:
+        db.execute("ALTER TABLE project ADD COLUMN name TEXT")
+
+
+def create_project(db: sqlite3.Connection, reading: str) -> Project:
+    prepare(db)
+    if type(reading) is not str:
+        raise ValueError("reading must be text")
+    with db:
+        project_id = _rowid(db.execute("INSERT INTO project (reading) VALUES (?)", (reading,)))
+    return Project(reading=reading, id=project_id)
+
+
+def set_project_name(db: sqlite3.Connection, project_id: int, name: str | None) -> None:
+    prepare(db)
+    if name is not None:
+        name = name.strip() or None
+    with db:
+        cursor = db.execute("UPDATE project SET name = ? WHERE id = ?", (name, project_id))
+        if cursor.rowcount != 1:
+            raise LookupError(f"no project {project_id}")
+
+
+def replace_pieces(db: sqlite3.Connection, project_id: int, pieces: tuple[Piece, ...]) -> tuple[Piece, ...]:
+    prepare(db)
+    _fresh_pieces(pieces)
+    with db:
+        if db.execute("SELECT id FROM project WHERE id = ?", (project_id,)).fetchone() is None:
+            raise LookupError(f"no project {project_id}")
+        db.execute("DELETE FROM piece WHERE project_id = ?", (project_id,))
+        return tuple(_insert_piece(db, project_id, index, piece) for index, piece in enumerate(pieces))
+
+
+def insert_sizes(db: sqlite3.Connection, piece_id: int, sizes: tuple[Size, ...]) -> tuple[Size, ...]:
+    prepare(db)
+    for size in sizes:
+        if size.id is not None:
+            raise ValueError("insert sizes inserts new sizes")
+        if size.passes or size.repeats:
+            raise ValueError("insert sizes starts with empty passes")
+    with db:
+        row = db.execute("SELECT id, parsed FROM piece WHERE id = ?", (piece_id,)).fetchone()
+        if row is None:
+            raise LookupError(f"no piece {piece_id}")
+        if not row["parsed"]:
+            raise ValueError("an unparsed piece has no sizes")
+        db.execute("DELETE FROM size WHERE piece_id = ?", (piece_id,))
+        return tuple(_insert_size(db, piece_id, index, size) for index, size in enumerate(sizes))
+
+
+def replace_size_passes(
+    db: sqlite3.Connection,
+    size_id: int,
+    passes: tuple[Pass, ...],
+    repeats: tuple[Repeat, ...] = (),
+) -> Size:
+    prepare(db)
+    for step in passes:
+        if step.id is not None or _child_ids(step):
+            raise ValueError("replace size passes inserts new passes")
+    if any(repeat.id is not None for repeat in repeats):
+        raise ValueError("replace size passes inserts new repeats")
+    with db:
+        row = db.execute("SELECT id, name FROM size WHERE id = ?", (size_id,)).fetchone()
+        if row is None:
+            raise LookupError(f"no size {size_id}")
+        Size(name=row["name"], passes=passes, repeats=repeats)
+        db.execute("DELETE FROM pass WHERE size_id = ?", (size_id,))
+        db.execute("DELETE FROM pass_repeat WHERE size_id = ?", (size_id,))
+        stored_passes = tuple(_insert_pass(db, size_id, index, step) for index, step in enumerate(passes))
+        stored_repeats = tuple(
+            _insert_repeat(db, size_id, index, repeat) for index, repeat in enumerate(repeats)
+        )
+    return Size(name=row["name"], passes=stored_passes, repeats=stored_repeats, id=size_id)
+
+
+def save_abbreviations(
+    db: sqlite3.Connection,
+    project_id: int,
+    abbreviations: tuple[Abbreviation, ...],
+) -> tuple[Abbreviation, ...]:
+    prepare(db)
+    if any(item.id is not None for item in abbreviations):
+        raise ValueError("save abbreviations inserts new rows")
+    with db:
+        if db.execute("SELECT id FROM project WHERE id = ?", (project_id,)).fetchone() is None:
+            raise LookupError(f"no project {project_id}")
+        db.execute("DELETE FROM abbreviation WHERE project_id = ?", (project_id,))
+        stored = []
+        for index, item in enumerate(abbreviations):
+            item_id = _rowid(
+                db.execute(
+                    "INSERT INTO abbreviation (project_id, position, abbr, expansion) VALUES (?, ?, ?, ?)",
+                    (project_id, index, item.abbr, item.expansion),
+                )
+            )
+            stored.append(replace(item, id=item_id))
+    return tuple(stored)
+
+
+def load_abbreviations(db: sqlite3.Connection, project_id: int) -> tuple[Abbreviation, ...]:
+    prepare(db)
+    return tuple(
+        Abbreviation(abbr=row["abbr"], expansion=row["expansion"], id=row["id"])
+        for row in _at(db, "abbreviation", "project_id", project_id)
+    )
 
 
 def save_project(db: sqlite3.Connection, project: Project) -> Project:
@@ -200,7 +322,10 @@ def save_project(db: sqlite3.Connection, project: Project) -> Project:
     _new(project)
     with db:
         project_id = _rowid(
-            db.execute("INSERT INTO project (reading) VALUES (?)", (project.reading,))
+            db.execute(
+                "INSERT INTO project (reading, name) VALUES (?, ?)",
+                (project.reading, project.name),
+            )
         )
         pieces = tuple(_insert_piece(db, project_id, index, piece) for index, piece in enumerate(project.pieces))
     return replace(project, id=project_id, pieces=pieces)
@@ -208,20 +333,24 @@ def save_project(db: sqlite3.Connection, project: Project) -> Project:
 
 def load_project(db: sqlite3.Connection, project_id: int) -> Project:
     prepare(db)
-    row = db.execute("SELECT id, reading FROM project WHERE id = ?", (project_id,)).fetchone()
+    row = db.execute("SELECT id, reading, name FROM project WHERE id = ?", (project_id,)).fetchone()
     if row is None:
         raise LookupError(f"no project {project_id}")
     pieces = tuple(
         _load_piece(db, piece)
         for piece in _at(db, "piece", "project_id", row["id"])
     )
-    return Project(reading=row["reading"], pieces=pieces, id=row["id"])
+    return Project(reading=row["reading"], pieces=pieces, name=row["name"], id=row["id"])
 
 
 def _new(project: Project) -> None:
     if project.id is not None:
         raise ValueError("save inserts a new project")
-    for piece in project.pieces:
+    _fresh_pieces(project.pieces)
+
+
+def _fresh_pieces(pieces: tuple[Piece, ...]) -> None:
+    for piece in pieces:
         if piece.id is not None:
             raise ValueError("save inserts a new project")
         for size in piece.sizes:

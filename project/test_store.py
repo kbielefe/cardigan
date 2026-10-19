@@ -8,6 +8,7 @@ import unittest
 from dataclasses import asdict
 
 from project import (
+    Abbreviation,
     CarriageSetting,
     Pass,
     Piece,
@@ -19,8 +20,15 @@ from project import (
     Size,
     Yarn,
     connect,
+    create_project,
+    insert_sizes,
+    load_abbreviations,
     load_project,
+    replace_pieces,
+    replace_size_passes,
+    save_abbreviations,
     save_project,
+    set_project_name,
 )
 
 READING = "\n\n".join(
@@ -247,6 +255,40 @@ class StoreTests(unittest.TestCase):
             save_project(self.db, stored)
         with self.assertRaises(LookupError):
             load_project(self.db, stored.id + 1)
+
+    def test_parsed_piece_may_have_empty_passes(self):
+        piece = Piece(name="Body", parsed=True, sizes=(Size(name="XS-M"),))
+        self.assertEqual(piece.sizes[0].passes, ())
+        project = Project(reading="Knit 3 rows.", name="Wrap", pieces=(piece,))
+        self.assertEqual(project.name, "Wrap")
+
+    def test_incremental_store(self):
+        project = create_project(self.db, "Knit 3 rows.\n\nBody\n\nKnit 2 rows.")
+        self.assertIsNotNone(project.id)
+        set_project_name(self.db, project.id, "Wrap Scarf")
+        pieces = replace_pieces(
+            self.db,
+            project.id,
+            (
+                Piece(name="Body", parsed=True, sizes=()),
+                Piece(name="How to Wrap", parsed=False),
+            ),
+        )
+        self.assertEqual(len(pieces), 2)
+        self.assertTrue(pieces[0].parsed)
+        self.assertEqual(pieces[0].sizes, ())
+        sizes = insert_sizes(self.db, pieces[0].id, (Size(name="XS-M"), Size(name="L-2X")))
+        self.assertEqual([size.name for size in sizes], ["XS-M", "L-2X"])
+        self.assertEqual(sizes[0].passes, ())
+        trip = Pass(kind="trip", count=2, cite_start=0, cite_end=12)
+        filled = replace_size_passes(self.db, sizes[0].id, (trip,))
+        self.assertEqual(len(filled.passes), 1)
+        save_abbreviations(self.db, project.id, (Abbreviation("RC", "row counter"),))
+        self.assertEqual(load_abbreviations(self.db, project.id)[0].abbr, "RC")
+        loaded = load_project(self.db, project.id)
+        self.assertEqual(loaded.name, "Wrap Scarf")
+        self.assertEqual(loaded.pieces[0].sizes[0].passes[0].count, 2)
+        self.assertEqual(loaded.pieces[1].parsed, False)
 
     def test_sql_keeps_the_same_rules(self):
         stored = save_project(self.db, Project(reading="Knit 3 rows.", pieces=(Piece(name="Body", sizes=(Size(name="XS-M", passes=(Pass(kind="trip", cite_start=0, cite_end=12),)),)),)))

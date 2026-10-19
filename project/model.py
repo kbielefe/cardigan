@@ -288,6 +288,18 @@ class Size:
 
 
 @dataclass(frozen=True)
+class Abbreviation:
+    abbr: str
+    expansion: str
+    id: int | None = None
+
+    def __post_init__(self) -> None:
+        _text(self.abbr, "abbreviation")
+        _text(self.expansion, "expansion")
+        _id(self.id, "abbreviation id")
+
+
+@dataclass(frozen=True)
 class Piece:
     name: str
     sizes: tuple[Size, ...] = ()
@@ -303,8 +315,6 @@ class Piece:
             raise ValueError("parsed must be true or false")
         if not self.parsed and self.sizes:
             raise ValueError("an unparsed piece has no sizes")
-        if self.parsed and not any(size.passes for size in self.sizes):
-            raise ValueError("a parsed piece has a pass")
         _id(self.id, "piece id")
 
 
@@ -312,11 +322,13 @@ class Piece:
 class Project:
     reading: str
     pieces: tuple[Piece, ...] = ()
+    name: str | None = None
     id: int | None = None
 
     def __post_init__(self) -> None:
         if type(self.reading) is not str:
             raise ValueError("reading must be text")
+        _optional_text(self.name, "project name")
         _tuple(self.pieces, "pieces", Piece)
         _id(self.id, "project id")
         limit = len(self.reading)
