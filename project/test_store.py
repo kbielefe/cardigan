@@ -337,7 +337,9 @@ class StoreTests(unittest.TestCase):
         self.assertGreaterEqual(len(tables), 8)
         for table in tables:
             self.assertNotIn("machine", table["name"].lower())
-            self.assertNotIn("machine", table["sql"].lower())
+            sql = table["sql"].lower()
+            self.assertNotIn("machine_id", sql)
+            self.assertNotIn("references machine", sql)
             columns = self.db.execute(f'PRAGMA table_info("{table["name"]}")')
             for column in columns:
                 self.assertNotIn("machine", column["name"].lower())

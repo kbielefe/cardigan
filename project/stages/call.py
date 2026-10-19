@@ -23,3 +23,4 @@ class StageComplete(Protocol):
 
 OnStage = Callable[[str], None]
 OnPieceReady = Callable[[dict], None]
+OnSectionReady = Callable[[dict], None]

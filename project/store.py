@@ -42,7 +42,32 @@ CREATE TABLE IF NOT EXISTS section (
     project_id INTEGER NOT NULL REFERENCES project (id) ON DELETE CASCADE,
     position INTEGER NOT NULL,
     text TEXT NOT NULL CHECK (length(text) > 0),
-    UNIQUE (project_id, position)
+    kind TEXT CHECK (kind IS NULL OR kind IN (
+        'piece', 'method', 'glossary', 'gauge', 'sizes', 'yarn', 'machine', 'notes', 'finishing', 'page'
+    )),
+    heading TEXT CHECK (heading IS NULL OR length(trim(heading)) > 0),
+    copies INTEGER CHECK (copies IS NULL OR copies >= 1),
+    procedure INTEGER CHECK (procedure IS NULL OR procedure IN (0, 1)),
+    UNIQUE (project_id, position),
+    CHECK (kind IS NULL OR procedure IS NOT NULL),
+    CHECK (kind = 'piece' OR copies IS NULL)
+);
+
+CREATE TABLE IF NOT EXISTS section_size (
+    id INTEGER PRIMARY KEY,
+    section_id INTEGER NOT NULL REFERENCES section (id) ON DELETE CASCADE,
+    position INTEGER NOT NULL,
+    name TEXT NOT NULL CHECK (length(trim(name)) > 0),
+    UNIQUE (section_id, position)
+);
+
+CREATE TABLE IF NOT EXISTS section_glossary (
+    id INTEGER PRIMARY KEY,
+    section_id INTEGER NOT NULL REFERENCES section (id) ON DELETE CASCADE,
+    position INTEGER NOT NULL,
+    abbr TEXT NOT NULL CHECK (length(trim(abbr)) > 0),
+    expansion TEXT NOT NULL CHECK (length(trim(expansion)) > 0),
+    UNIQUE (section_id, position)
 );
 
 CREATE TABLE IF NOT EXISTS piece (
@@ -220,6 +245,12 @@ def _migrate(db: sqlite3.Connection) -> None:
     columns = {row["name"] for row in db.execute("PRAGMA table_info(project)")}
     if "name" not in columns:
         db.execute("ALTER TABLE project ADD COLUMN name TEXT")
+    section_columns = {row["name"] for row in db.execute("PRAGMA table_info(section)")}
+    if section_columns and "kind" not in section_columns:
+        db.execute("ALTER TABLE section ADD COLUMN kind TEXT")
+        db.execute("ALTER TABLE section ADD COLUMN heading TEXT")
+        db.execute("ALTER TABLE section ADD COLUMN copies INTEGER")
+        db.execute("ALTER TABLE section ADD COLUMN procedure INTEGER")
 
 
 def create_project(db: sqlite3.Connection, reading: str) -> Project:
@@ -263,10 +294,43 @@ def save_sections(db: sqlite3.Connection, project_id: int, sections: tuple[Secti
 
 def load_sections(db: sqlite3.Connection, project_id: int) -> tuple[Section, ...]:
     prepare(db)
-    return tuple(
-        Section(text=row["text"], id=row["id"])
-        for row in _at(db, "section", "project_id", project_id)
-    )
+    return tuple(_load_section(db, row) for row in _at(db, "section", "project_id", project_id))
+
+
+def save_section_reading(db: sqlite3.Connection, section: Section) -> Section:
+    """Write this section's reading. The verbatim text stays as the split stored it."""
+    prepare(db)
+    if section.id is None or section.kind is None:
+        raise ValueError("a section reading updates a stored section")
+    with db:
+        row = db.execute("SELECT id, text FROM section WHERE id = ?", (section.id,)).fetchone()
+        if row is None:
+            raise LookupError(f"no section {section.id}")
+        if row["text"] != section.text:
+            raise ValueError("a section reading does not change the section text")
+        db.execute(
+            """
+            UPDATE section
+            SET kind = ?, heading = ?, copies = ?, procedure = ?
+            WHERE id = ?
+            """,
+            (
+                section.kind,
+                section.heading,
+                section.copies,
+                int(section.procedure) if section.procedure is not None else None,
+                section.id,
+            ),
+        )
+        db.execute("DELETE FROM section_size WHERE section_id = ?", (section.id,))
+        db.execute("DELETE FROM section_glossary WHERE section_id = ?", (section.id,))
+        size_names = tuple(
+            _insert_section_size(db, section.id, index, name) for index, name in enumerate(section.size_names)
+        )
+        glossary = tuple(
+            _insert_section_term(db, section.id, index, item) for index, item in enumerate(section.glossary)
+        )
+    return replace(section, size_names=size_names, glossary=glossary)
 
 
 def replace_pieces(db: sqlite3.Connection, project_id: int, pieces: tuple[Piece, ...]) -> tuple[Piece, ...]:
@@ -385,11 +449,60 @@ def load_project(db: sqlite3.Connection, project_id: int) -> Project:
 def _insert_section(db: sqlite3.Connection, project_id: int, position: int, item: Section) -> Section:
     item_id = _rowid(
         db.execute(
-            "INSERT INTO section (project_id, position, text) VALUES (?, ?, ?)",
-            (project_id, position, item.text),
+            """
+            INSERT INTO section (project_id, position, text, kind, heading, copies, procedure)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                project_id,
+                position,
+                item.text,
+                item.kind,
+                item.heading,
+                item.copies,
+                None if item.procedure is None else int(item.procedure),
+            ),
+        )
+    )
+    size_names = tuple(_insert_section_size(db, item_id, index, name) for index, name in enumerate(item.size_names))
+    glossary = tuple(_insert_section_term(db, item_id, index, term) for index, term in enumerate(item.glossary))
+    return replace(item, id=item_id, size_names=size_names, glossary=glossary)
+
+
+def _insert_section_size(db: sqlite3.Connection, section_id: int, position: int, name: str) -> str:
+    db.execute(
+        "INSERT INTO section_size (section_id, position, name) VALUES (?, ?, ?)",
+        (section_id, position, name),
+    )
+    return name
+
+
+def _insert_section_term(db: sqlite3.Connection, section_id: int, position: int, item: Abbreviation) -> Abbreviation:
+    item_id = _rowid(
+        db.execute(
+            "INSERT INTO section_glossary (section_id, position, abbr, expansion) VALUES (?, ?, ?, ?)",
+            (section_id, position, item.abbr, item.expansion),
         )
     )
     return replace(item, id=item_id)
+
+
+def _load_section(db: sqlite3.Connection, row: sqlite3.Row) -> Section:
+    if row["kind"] is None:
+        return Section(text=row["text"], id=row["id"])
+    return Section(
+        text=row["text"],
+        id=row["id"],
+        kind=row["kind"],
+        heading=row["heading"],
+        copies=row["copies"],
+        procedure=bool(row["procedure"]),
+        size_names=tuple(item["name"] for item in _at(db, "section_size", "section_id", row["id"])),
+        glossary=tuple(
+            Abbreviation(abbr=item["abbr"], expansion=item["expansion"], id=item["id"])
+            for item in _at(db, "section_glossary", "section_id", row["id"])
+        ),
+    )
 
 
 def _new(project: Project) -> None:

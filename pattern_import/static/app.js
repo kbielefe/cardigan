@@ -12,6 +12,7 @@ const STAGE_LABELS = {
   vocabulary: "Reading abbreviations…",
   sizes: "Reading sizes…",
   sections: "Splitting the pattern…",
+  section: "Reading each section…",
   passes: "Building passes…",
   charts: "Reading charts…",
 };

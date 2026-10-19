@@ -44,6 +44,18 @@ SHAPES = (
     "scrap_off",
 )
 YARN_PLACES = ("main", "plating", "unnamed", "rest")
+SECTION_KINDS = (
+    "piece",
+    "method",
+    "glossary",
+    "gauge",
+    "sizes",
+    "yarn",
+    "machine",
+    "notes",
+    "finishing",
+    "page",
+)
 
 
 def _int(value: object, name: str, minimum: int | None = None) -> int:
@@ -301,15 +313,51 @@ class Abbreviation:
 
 @dataclass(frozen=True)
 class Section:
-    """One verbatim span of the pattern. Joined in order, the sections are the reading."""
+    """One verbatim span of the pattern. Joined in order, the sections are the reading.
+
+    A reading is absent until this section has been parsed. Kind, procedure, and the
+    facts below are that reading.
+    """
 
     text: str
     id: int | None = None
+    kind: str | None = None
+    heading: str | None = None
+    copies: int | None = None
+    procedure: bool | None = None
+    size_names: tuple[str, ...] = ()
+    glossary: tuple[Abbreviation, ...] = ()
 
     def __post_init__(self) -> None:
         if type(self.text) is not str or self.text == "":
             raise ValueError("section must be text")
         _id(self.id, "section id")
+        _tuple(self.size_names, "size names", str)
+        if any(not name.strip() for name in self.size_names):
+            raise ValueError("size name must be text")
+        _tuple(self.glossary, "glossary", Abbreviation)
+        if self.kind is None:
+            if (
+                self.heading is not None
+                or self.copies is not None
+                or self.procedure is not None
+                or self.size_names
+                or self.glossary
+            ):
+                raise ValueError("an unread section has no reading")
+            return
+        _choice(self.kind, "section kind", SECTION_KINDS)
+        _optional_text(self.heading, "heading")
+        if type(self.procedure) is not bool:
+            raise ValueError("procedure must be true or false")
+        if self.kind == "piece":
+            _optional_int(self.copies, "copies", 1)
+        elif self.copies is not None:
+            raise ValueError("copies belong on a piece")
+        if self.kind != "sizes" and self.size_names:
+            raise ValueError("size names belong on a sizes section")
+        if self.kind != "glossary" and self.glossary:
+            raise ValueError("a glossary belongs on a glossary section")
 
 
 @dataclass(frozen=True)

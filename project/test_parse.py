@@ -12,7 +12,6 @@ from urllib.request import Request, urlopen
 from pattern_import.extract import extract_bytes
 from pattern_import.server import make_server
 from project.complete import complete, pass_schema, read_key, schema
-from project.model import Section
 from project.parse import ParseFailure, build_size_passes, parse_reading
 from project.store import connect, load_project
 
@@ -98,6 +97,33 @@ def _wrap_payload(reading: str) -> dict:
     }
 
 
+def _section_reading(content: str) -> dict:
+    lines = [line.strip() for line in content.splitlines() if line.strip()]
+    first = lines[0] if lines else None
+    blank = {"copies": None, "procedure": False, "size_names": [], "glossary": []}
+    if first and first.startswith("Glossary"):
+        return {
+            "kind": "glossary",
+            "heading": "Glossary",
+            "copies": None,
+            "procedure": False,
+            "size_names": [],
+            "glossary": [{"abbr": "RC", "expansion": "row count"}],
+        }
+    if first and first.startswith("Size"):
+        return {**blank, "kind": "sizes", "heading": "Size:", "size_names": ["XS-M", "L-2X", "3X-5X"]}
+    if first and first.startswith("Gauge"):
+        return {**blank, "kind": "gauge", "heading": "Gauge"}
+    if first and (first.startswith("How to Wrap") or first.startswith("Sew ")):
+        return {**blank, "kind": "finishing", "heading": first}
+    if content.lstrip().startswith("Body"):
+        return {**blank, "kind": "piece", "heading": "Body", "procedure": True}
+    if first and first.startswith("Sleeve"):
+        copies = 2 if "make 2" in content.casefold() or "second sleeve" in content.casefold() else None
+        return {**blank, "kind": "piece", "heading": first, "copies": copies, "procedure": True}
+    return {**blank, "kind": "notes", "heading": first}
+
+
 def _stage_complete(reading: str, wrap: dict, *, fail_at: str | None = None):
     pieces = wrap["pieces"]
 
@@ -160,6 +186,8 @@ def _stage_complete(reading: str, wrap: dict, *, fail_at: str | None = None):
             return {"passes": [], "repeats": []}
         if schema_name == "charts":
             return {"piece": "Body", "size": "XS-M", "passes": [], "repeats": []}
+        if schema_name == "section":
+            return _section_reading(content)
         raise AssertionError(f"unexpected stage {schema_name}")
 
     return respond
@@ -181,6 +209,11 @@ class ParseTests(unittest.TestCase):
         self.assertEqual("".join(section.text for section in stored.sections), self.reading)
         self.assertGreaterEqual(len(stored.sections), 2)
         self.assertTrue(stored.sections[1].text.startswith("\nBody\n"))
+        self.assertEqual(stored.sections[1].kind, "piece")
+        self.assertEqual(stored.sections[1].heading, "Body")
+        self.assertTrue(stored.sections[1].procedure)
+        self.assertIsNone(stored.sections[1].copies)
+        self.assertEqual(stored.sections[0].kind, "notes")
         self.assertEqual(stored.pieces, ())
 
     def test_failed_call_after_bootstrap_leaves_the_project(self):
@@ -219,12 +252,16 @@ class ParseTests(unittest.TestCase):
         def respond(content, **_kwargs):
             if _kwargs.get("schema_name") == "metadata":
                 return {"name": "Gauge swatch"}
+            if _kwargs.get("schema_name") == "section":
+                return _section_reading(content)
             return {"sections": ["Gauge:\n4 inches", "Body\nKnit 2 rows."]}
 
         stored = parse_reading(reading, respond, self.db)
         self.assertEqual("".join(section.text for section in stored.sections), reading)
         self.assertEqual(stored.sections[0].text, "Gauge:\n4 inches\n\n")
+        self.assertEqual(stored.sections[0].kind, "gauge")
         self.assertEqual(stored.sections[1].text, "Body\nKnit 2 rows.")
+        self.assertEqual(stored.sections[1].kind, "piece")
 
     def test_every_piece_failing_stores_the_project_row(self):
         with self.assertRaises(ParseFailure):
@@ -264,10 +301,12 @@ class ParseTests(unittest.TestCase):
             self.db,
         )
         self.assertEqual(load_project(self.db, stored.id), stored)
-        self.assertEqual(
-            stored.sections,
-            (Section(text="How to Wrap:\nFold it.", id=stored.sections[0].id),),
-        )
+        section = stored.sections[0]
+        self.assertEqual(section.text, "How to Wrap:\nFold it.")
+        self.assertEqual(section.kind, "finishing")
+        self.assertEqual(section.heading, "How to Wrap:")
+        self.assertFalse(section.procedure)
+        self.assertIsNone(section.copies)
 
     def test_stage_events_fire_in_order(self):
         seen = []
@@ -277,7 +316,45 @@ class ParseTests(unittest.TestCase):
             self.db,
             on_stage=seen.append,
         )
-        self.assertEqual(seen, ["bootstrap", "metadata", "sections"])
+        self.assertEqual(seen, ["bootstrap", "metadata", "sections", "section"])
+
+    def test_a_failed_section_keeps_the_readings_already_written(self):
+        reading = "Gauge:\n4 inches\n\nBody\nKnit 2 rows."
+
+        def respond(content, **kwargs):
+            if kwargs.get("schema_name") == "metadata":
+                return {"name": "Gauge swatch"}
+            if kwargs.get("schema_name") == "section":
+                if content.lstrip().startswith("Body"):
+                    raise ParseFailure("The model did not answer.")
+                return _section_reading(content)
+            return {"sections": ["Gauge:\n4 inches\n\n", "Body\nKnit 2 rows."]}
+
+        with self.assertRaises(ParseFailure) as caught:
+            parse_reading(reading, respond, self.db)
+        self.assertEqual(str(caught.exception), "The model did not answer.")
+        stored = load_project(self.db, 1)
+        self.assertEqual("".join(section.text for section in stored.sections), reading)
+        self.assertEqual(stored.sections[0].kind, "gauge")
+        self.assertEqual(stored.sections[0].heading, "Gauge")
+        self.assertIsNone(stored.sections[1].kind)
+
+    def test_a_glossary_section_keeps_its_terms(self):
+        reading = "Glossary\nRC = row count"
+        stored = parse_reading(reading, _stage_complete(reading, self.wrap), self.db)
+        section = stored.sections[0]
+        self.assertEqual(section.kind, "glossary")
+        self.assertEqual([(item.abbr, item.expansion) for item in section.glossary], [("RC", "row count")])
+        self.assertEqual(load_project(self.db, stored.id), stored)
+
+    def test_a_piece_section_keeps_how_many_to_make(self):
+        reading = "Sleeve (make 2)\nKnit 2 rows."
+        stored = parse_reading(reading, _stage_complete(reading, self.wrap), self.db)
+        section = stored.sections[0]
+        self.assertEqual(section.kind, "piece")
+        self.assertEqual(section.copies, 2)
+        self.assertTrue(section.procedure)
+        self.assertEqual(load_project(self.db, stored.id), stored)
 
 
 class CompleteTests(unittest.TestCase):
@@ -364,6 +441,7 @@ class AcceptTests(unittest.TestCase):
         self.assertIn("STAGE_LABELS", script)
         self.assertIn("frozenCharts", script)
         self.assertIn("Splitting the pattern…", script)
+        self.assertIn("Reading each section…", script)
 
     def test_accept_on_the_wrap_sweater(self):
         reading = _reading()
@@ -373,6 +451,9 @@ class AcceptTests(unittest.TestCase):
         self.assertTrue(body["ok"], body)
         self.assertEqual("".join(body["sections"]), reading)
         self.assertGreaterEqual(len(body["sections"]), 2)
+        self.assertEqual(len(body["readings"]), len(body["sections"]))
+        self.assertEqual(body["readings"][1]["kind"], "piece")
+        self.assertEqual(body["readings"][1]["heading"], "Body")
         db = connect(self.path)
         try:
             stored = load_project(db, 1)
@@ -432,7 +513,11 @@ class AcceptTests(unittest.TestCase):
         self.assertIn("stage", types)
         self.assertEqual(events[-1]["type"], "done")
         names = [event["name"] for event in events if event["type"] == "stage"]
-        self.assertEqual(names, ["bootstrap", "metadata", "sections"])
+        self.assertEqual(names, ["bootstrap", "metadata", "sections", "section"])
+        ready = [event for event in events if event["type"] == "section_ready"]
+        self.assertGreaterEqual(len(ready), 2)
+        self.assertEqual(ready[1]["kind"], "piece")
+        self.assertEqual(ready[1]["heading"], "Body")
 
     def _post(self, reading: str, charts=None) -> dict:
         events = self._events(reading, charts=charts)

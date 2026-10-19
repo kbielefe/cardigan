@@ -44,6 +44,7 @@ def parse_reading(
     charts: list | None = None,
     on_stage=None,
     on_piece_ready=None,
+    on_section_ready=None,
     on_delta=None,
 ) -> Project:
     """Run the staged parse pipeline. ``complete`` is the per-call LLM function."""
@@ -56,6 +57,7 @@ def parse_reading(
         charts=charts,
         on_stage=on_stage,
         on_piece_ready=on_piece_ready,
+        on_section_ready=on_section_ready,
         on_delta=on_delta,
     )
 

@@ -9,7 +9,8 @@ from project.complete import OnDelta
 from project.model import Project
 from project.parse import ParseFailure
 from project.stages import run_metadata
-from project.stages.call import OnPieceReady, OnStage, StageComplete
+from project.stages.call import OnPieceReady, OnSectionReady, OnStage, StageComplete
+from project.stages.section_parse import run_section_parse
 from project.stages.split import run_split
 from project.store import create_project, load_project
 
@@ -22,6 +23,7 @@ def run(
     charts: list | None = None,
     on_stage: OnStage | None = None,
     on_piece_ready: OnPieceReady | None = None,
+    on_section_ready: OnSectionReady | None = None,
     on_delta: OnDelta | None = None,
 ) -> Project:
     if type(reading) is not str or not reading.strip():
@@ -42,7 +44,16 @@ def run(
         run_metadata(db, project_id, reading, complete, on_delta=on_delta)
 
         emit("sections")
-        run_split(db, project_id, reading, complete, on_delta=on_delta)
+        sections = run_split(db, project_id, reading, complete, on_delta=on_delta)
+
+        emit("section")
+        run_section_parse(
+            db,
+            sections,
+            complete,
+            on_delta=on_delta,
+            on_section_ready=on_section_ready,
+        )
 
     except ParseFailure:
         raise

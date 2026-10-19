@@ -23,6 +23,18 @@ from project import otel
 from project.parse import ParseFailure, parse_reading
 from project.store import connect
 
+
+def _reading_payload(section) -> dict:
+    return {
+        "kind": section.kind,
+        "heading": section.heading,
+        "copies": section.copies,
+        "procedure": section.procedure,
+        "size_names": list(section.size_names),
+        "glossary": [{"abbr": item.abbr, "expansion": item.expansion} for item in section.glossary],
+    }
+
+
 STATIC = Path(__file__).resolve().parent / "static"
 TYPES = {
     ".html": "text/html; charset=utf-8",
@@ -97,6 +109,9 @@ class Handler(BaseHTTPRequestHandler):
         def on_piece_ready(info: dict) -> None:
             self._sse({"type": "piece_ready", **info})
 
+        def on_section_ready(info: dict) -> None:
+            self._sse({"type": "section_ready", **info})
+
         db = connect(self.server.db_path)
         try:
             project = parse_reading(
@@ -106,6 +121,7 @@ class Handler(BaseHTTPRequestHandler):
                 charts=charts,
                 on_stage=on_stage,
                 on_piece_ready=on_piece_ready,
+                on_section_ready=on_section_ready,
                 on_delta=on_delta,
             )
         except ParseFailure as exc:
@@ -118,6 +134,7 @@ class Handler(BaseHTTPRequestHandler):
                 "type": "done",
                 "ok": True,
                 "sections": [section.text for section in project.sections],
+                "readings": [_reading_payload(section) for section in project.sections],
                 "pieces": [
                     {
                         "name": piece.name,
