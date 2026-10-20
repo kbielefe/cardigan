@@ -28,6 +28,7 @@ const notice = document.getElementById("notice");
 const reading = document.getElementById("reading");
 const partsEl = document.getElementById("parts");
 const piecesEl = document.getElementById("pieces");
+const treeLive = document.getElementById("tree-live");
 const accept = document.getElementById("accept");
 const discard = document.getElementById("discard");
 const another = document.getElementById("another");
@@ -43,6 +44,21 @@ let token = 0;
 let parts = null;
 let parseMessage = "";
 let stageIndex = 0;
+let patternName = "";
+let branches = [];
+
+const KIND_TITLES = {
+  piece: "Piece",
+  method: "Method",
+  glossary: "Abbreviations",
+  gauge: "Gauge",
+  sizes: "Sizes",
+  yarn: "Yarn",
+  machine: "Machine",
+  notes: "Notes",
+  finishing: "Finishing",
+  page: "Page",
+};
 
 tabs.forEach((button, index) => {
   button.addEventListener("click", () => selectTab(nameOf(button)));
@@ -116,6 +132,9 @@ accept.addEventListener("click", () => {
   phase = "parsing";
   parseMessage = "";
   stageIndex = 0;
+  patternName = "";
+  branches = [];
+  treeLive.textContent = "";
   piecesEl.replaceChildren();
   render();
   fetch("/accept", {
@@ -168,7 +187,26 @@ async function readAccept(response, mine) {
         render();
         continue;
       }
+      if (event.type === "named") {
+        const title = takeNamed(event.name);
+        render();
+        followTree();
+        if (title) treeLive.textContent = title;
+        continue;
+      }
+      if (event.type === "section_ready") {
+        takeSection(event);
+        render();
+        followTree();
+        const branch = branches.find((item) => item.index === event.index);
+        if (branch && shown(branch)) treeLive.textContent = sectionTitle(branch);
+        continue;
+      }
       if (event.type === "piece_ready") {
+        const title = takePiece(event);
+        render();
+        followTree();
+        if (title) treeLive.textContent = title;
         continue;
       }
       if (event.type === "delta") {
@@ -189,9 +227,10 @@ async function readAccept(response, mine) {
       if (event.type === "done") {
         phase = "parsed";
         parseMessage = "";
-        showPieces(event.sections ? event.sections.map(sectionLine) : event.pieces || []);
+        settleTree(event);
         render();
-        piecesEl.scrollIntoView({ block: "nearest" });
+        followTree();
+        another.focus();
         return;
       }
     }
@@ -553,28 +592,197 @@ function partText(part) {
     .join("\n\n");
 }
 
-function sectionLine(text) {
-  const line = String(text).trim().split("\n")[0];
-  return { name: line, parsed: true, sizes: [] };
+function sectionTitle(branch) {
+  const heading = branch.heading && String(branch.heading).trim();
+  if (heading) return heading;
+  return KIND_TITLES[branch.kind] || "Section";
 }
 
-function showPieces(list) {
-  piecesEl.replaceChildren();
-  list.forEach((piece) => {
-    const block = document.createElement("p");
-    block.append(piece.name);
-    if (piece.parsed && (piece.sizes || []).length) {
-      block.append(document.createElement("br"));
-      block.append(piece.sizes.join(", "));
-    } else if (!piece.parsed) {
-      block.append(document.createElement("br"));
-      const mark = document.createElement("span");
-      mark.className = "unparsed";
-      mark.textContent = "Unparsed";
-      block.append(mark);
-    }
-    piecesEl.append(block);
+function knitting(branch) {
+  return (branch.kind === "piece" || branch.kind === "method") && branch.procedure === true;
+}
+
+function takeNamed(name) {
+  if (typeof name !== "string" || !name.trim()) return "";
+  patternName = name.trim();
+  return patternName;
+}
+
+function takeSection(event) {
+  const branch = {
+    index: event.index,
+    kind: event.kind,
+    heading: event.heading || null,
+    copies: Number.isInteger(event.copies) ? event.copies : null,
+    procedure: event.procedure === true,
+    sizeNames: textList(event.size_names),
+    glossary: glossaryOf(event.glossary),
+    sizes: [],
+    unparsed: false,
+  };
+  const at = branches.findIndex((item) => item.index === branch.index);
+  if (at >= 0) {
+    branch.sizes = branches[at].sizes;
+    branch.unparsed = branches[at].unparsed;
+    branches[at] = branch;
+  } else {
+    branches.push(branch);
+    branches.sort((a, b) => a.index - b.index);
+  }
+  return sectionTitle(branch);
+}
+
+function takePiece(event) {
+  if (typeof event.piece !== "string" || typeof event.size !== "string") return "";
+  const named = branches.filter((branch) => knitting(branch) && sectionTitle(branch) === event.piece);
+  const pool = named.length ? named : branches.filter(knitting);
+  let branch = pool.find((item) => item.sizes.some((size) => size.name === event.size));
+  if (!branch) branch = pool.find((item) => item.sizes.length === 0) || pool[pool.length - 1];
+  if (!branch) {
+    branch = {
+      index: branches.length,
+      kind: "piece",
+      heading: event.piece,
+      copies: null,
+      procedure: true,
+      sizeNames: [],
+      glossary: [],
+      sizes: [],
+      unparsed: false,
+    };
+    branches.push(branch);
+  }
+  const count = Number.isInteger(event.pass_count) ? event.pass_count : null;
+  const existing = branch.sizes.find((size) => size.name === event.size);
+  if (existing) existing.passCount = count;
+  else branch.sizes.push({ name: event.size, passCount: count });
+  const passes = passLabel(count);
+  const title = sectionTitle(branch);
+  return passes ? `${title}, ${event.size}, ${passes}` : `${title}, ${event.size}`;
+}
+
+function settleTree(event) {
+  if (typeof event.name === "string") takeNamed(event.name);
+  if (!branches.length && Array.isArray(event.readings)) {
+    event.readings.forEach((reading, index) => takeSection({ index, ...reading }));
+  }
+  (event.pieces || []).forEach((piece) => {
+    if (!piece || piece.parsed !== false || typeof piece.name !== "string") return;
+    const branch = branches.find((item) => sectionTitle(item) === piece.name);
+    if (branch) branch.unparsed = true;
   });
+}
+
+function textList(value) {
+  if (!Array.isArray(value)) return [];
+  return value.filter((item) => typeof item === "string" && item.trim()).map((item) => item.trim());
+}
+
+function glossaryOf(value) {
+  if (!Array.isArray(value)) return [];
+  return value
+    .filter((item) => item && typeof item.abbr === "string" && item.abbr.trim())
+    .map((item) => ({
+      abbr: item.abbr.trim(),
+      expansion: typeof item.expansion === "string" ? item.expansion.trim() : "",
+    }));
+}
+
+function passLabel(count) {
+  if (!Number.isInteger(count) || count < 1) return "";
+  return count === 1 ? "1 pass" : `${count} passes`;
+}
+
+function childLines(branch) {
+  if (branch.sizes.length) {
+    return branch.sizes.map((size) => ({ name: size.name, aside: passLabel(size.passCount) }));
+  }
+  if (branch.kind === "glossary" && branch.glossary.length) {
+    return branch.glossary.map((term) => ({ name: term.abbr, aside: term.expansion }));
+  }
+  if (branch.kind === "sizes" && branch.sizeNames.length) {
+    return branch.sizeNames.map((name) => ({ name, aside: "" }));
+  }
+  return [];
+}
+
+function copiesLabel(branch) {
+  if (!Number.isInteger(branch.copies) || branch.copies < 1) return "";
+  const phrase = `make ${branch.copies}`;
+  if (sectionTitle(branch).toLowerCase().includes(phrase)) return "";
+  return phrase;
+}
+
+function shown(branch) {
+  if (patternName && sectionTitle(branch) === patternName && !childLines(branch).length && !branch.unparsed) {
+    return copiesLabel(branch) !== "";
+  }
+  return true;
+}
+
+function renderBranch(branch) {
+  const item = document.createElement("li");
+  const line = document.createElement("p");
+  line.className = "branch";
+  line.append(sectionTitle(branch));
+  const copies = copiesLabel(branch);
+  if (copies) {
+    const aside = document.createElement("span");
+    aside.className = "aside";
+    aside.textContent = copies;
+    line.append(aside);
+  }
+  if (branch.unparsed) {
+    line.append(document.createElement("br"));
+    const mark = document.createElement("span");
+    mark.className = "unparsed";
+    mark.textContent = "Unparsed";
+    line.append(mark);
+  }
+  item.append(line);
+  const children = childLines(branch);
+  if (children.length) {
+    const nested = document.createElement("ul");
+    children.forEach((child) => {
+      const row = document.createElement("li");
+      const text = document.createElement("p");
+      text.className = "branch";
+      text.append(child.name);
+      if (child.aside) {
+        const aside = document.createElement("span");
+        aside.className = "aside";
+        aside.textContent = child.aside;
+        text.append(aside);
+      }
+      row.append(text);
+      nested.append(row);
+    });
+    item.append(nested);
+  }
+  return item;
+}
+
+function renderTree() {
+  piecesEl.replaceChildren();
+  if (!patternName && !branches.length) return;
+  if (patternName) {
+    const title = document.createElement("h2");
+    title.id = "pattern-name";
+    title.textContent = patternName;
+    piecesEl.append(title);
+  }
+  const visible = branches.filter(shown);
+  if (!visible.length) return;
+  const list = document.createElement("ul");
+  list.setAttribute("aria-label", patternName || "Pattern");
+  visible.forEach((branch) => list.append(renderBranch(branch)));
+  piecesEl.append(list);
+}
+
+function followTree() {
+  const last = piecesEl.querySelector("li:last-child");
+  const target = last || piecesEl.querySelector("h2");
+  if (target) target.scrollIntoView({ block: "nearest" });
 }
 
 function reset() {
@@ -584,6 +792,9 @@ function reset() {
   parts = null;
   parseMessage = "";
   stageIndex = 0;
+  patternName = "";
+  branches = [];
+  treeLive.textContent = "";
   partsEl.replaceChildren();
   piecesEl.replaceChildren();
   source.textContent = "";
@@ -628,10 +839,12 @@ function render() {
   const fetchNotice = phase === "working" || phase === "failed";
   notice.hidden = !fetchNotice;
   const split = parts !== null;
-  reading.hidden = split || (fetchNotice && tab !== "paste");
+  const accepted = frozen();
+  reading.hidden = accepted || split || (fetchNotice && tab !== "paste");
   if (phase === "working") reading.hidden = true;
-  partsEl.hidden = !split || phase === "working" || (fetchNotice && tab !== "paste");
-  piecesEl.hidden = phase !== "parsed";
+  partsEl.hidden = accepted || !split || phase === "working" || (fetchNotice && tab !== "paste");
+  renderTree();
+  piecesEl.hidden = !accepted || (!patternName && !branches.length);
   reading.readOnly = frozen();
   partsEl.querySelectorAll("textarea").forEach((area) => {
     area.readOnly = frozen();

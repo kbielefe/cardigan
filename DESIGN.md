@@ -105,6 +105,12 @@ components:
     typography: "{typography.body}"
     rounded: "{rounded.none}"
     padding: "0"
+  pattern-tree:
+    backgroundColor: transparent
+    textColor: "{colors.ink}"
+    typography: "{typography.body}"
+    rounded: "{rounded.none}"
+    padding: "0"
   bar:
     backgroundColor: "{colors.madder}"
     textColor: "{colors.paper}"
@@ -178,7 +184,7 @@ The page sets a light color scheme. It has no dark palette.
 
 ## Layout
 
-The page itself does not scroll. The body is a column: a full-bleed bar, then one sheet. The sheet holds the intake, the source line, the scrolling reading, and the footer.
+The page itself does not scroll. The body is a column: a full-bleed bar, then one sheet. The sheet holds the intake, the source line, the scrolling region, and the footer. Before Accept, that region is the reading. After Accept, it is the pattern tree.
 
 The sheet is as wide as the 68ch measure plus the two 32px gutters, and no wider than the window. On a wider window it is centered, so the paper margins on either side match. The wordmark sits in that same sheet, inside the full-bleed bar, and lines up with the reading.
 
@@ -188,7 +194,7 @@ The repeated distances are 8px, 12px, 16px, and the 32px gutter. They are not an
 
 At 720px and below, the sheet is the full window. The bar's sheet, the intake, the source line, the reading, and the footer use 16px of horizontal padding. The intake wraps. The tabs stretch to the full width and share it equally. The actions stack, full width.
 
-**The Fixed Bar Rule.** The bar, the intake, and the footer stay fixed. Only the reading region scrolls.
+**The Fixed Bar Rule.** The bar, the intake, and the footer stay fixed. Only the scrolling region moves, whether it holds the reading or the pattern tree.
 
 **The Sheet Rule.** The working surface is one sheet, centered when the window is wider than the measure. The bar stays full bleed. The scrollbar sits on the sheet, with the reading.
 
@@ -217,7 +223,7 @@ Corners are square (0). The stylesheet sets no radius, and the bar, tabs, fields
 - **Quiet:** Transparent ground, madder text, the same border, type, and padding. Hover fills inset. Disabled hover stays transparent.
 - **Hover / Focus:** The fill changes immediately. There is no transition. Focus-visible is the 2px madder ring, offset 2px.
 
-The accepted state uses the same primary button. It does not introduce a third shape. Accepting the input settles the reading.
+The accepted state uses the same primary button. Try again, after a failed parse, is that same button. Accepting the input hides the reading, and the pattern tree grows in its place.
 
 **The Two Actions Rule.** The primary action is a madder rectangle with paper text. The quiet action is madder text on a transparent ground. Both share the 1px madder edge, the action type, and 12px 18px padding.
 
@@ -239,9 +245,15 @@ A 10px rule under the settled line, shown only while a reading is parsing, after
 
 The carriage runs only while parsing. It pauses while the document is hidden. Under `prefers-reduced-motion`, the carriage does not travel and the fills do not slide. The current span keeps a 1px madder edge, so the place is still marked. The sentence stays the live status. The rule is hidden from assistive technology.
 
-Tabs, buttons, hover, and the reading still change with no transition.
+Tabs, buttons, hover, the reading, and the pattern tree still change with no transition.
 
 **The Carriage Rule.** Motion on this surface is the carriage crossing the current span of the parse rule. Nothing else moves.
+
+### Pattern tree
+
+Accept hides the reading at once. The same region then holds the pattern, on the paper, unboxed, within 68ch. The name arrives when the pattern is named. It is body type at weight 650, with 16px under it. Each section arrives as it is read: the pattern's heading, or a plain name when the section has none. A section whose heading is the pattern name, and that has nothing under it, is not listed again. A stated number of copies sits on that line in the note role, in quiet, as "make 2". When the heading already says how many to make, that number is not repeated. A sizes section lists its size names. A glossary lists each abbreviation and its expansion. A knitting section then gains a size, and that size's pass count, as each one is built. Those lines are indented 16px, with 8px between the section and its first line and 12px between sections. A pass count is the note role, in quiet. A section the finished parse could not read says Unparsed, in that same note role. A failed parse keeps every line that already landed. Nothing in the tree moves.
+
+**The Tree Rule.** Accept hides the reading. The pattern grows in its place from the name, the sections, and the passes. It stays on the paper, unboxed, and still.
 
 ### Bar
 
@@ -253,6 +265,7 @@ A 64px madder band, full bleed. The wordmark is in the sheet, padded 0 32px, and
 
 - **Do** keep madder as the only accent and paper as the ground.
 - **Do** leave the reading on the paper, unboxed, at the body size, within 68ch.
+- **Do** leave the pattern tree on that same paper, unboxed, once the reading is accepted.
 - **Do** use a 2px madder focus ring, offset 2px, and only on focus-visible.
 - **Do** stay square (0) and flat, and drop the gutter from 32px to 16px at 720px.
 - **Do** center the sheet on a wide window, and keep the bar full bleed.
@@ -261,7 +274,7 @@ A 64px madder band, full bleed. The wordmark is in the sheet, padded 0 32px, and
 
 - **Don't** add a shadow, a blur, or a second accent.
 - **Don't** round the bar, the tabs, the fields, or the actions.
-- **Don't** box the reading, or give it the field's white fill and tan rule.
-- **Don't** animate state changes outside the parse rule. Tabs, buttons, hover, and the reading have no transition.
+- **Don't** box the reading or the pattern tree, or give either the field's white fill and tan rule.
+- **Don't** animate state changes outside the parse rule. Tabs, buttons, hover, the reading, and the pattern tree have no transition.
 - **Don't** treat the platform sans as the face every future Cardigan surface must use. It is the face this leaflet ships.
 - **Don't** stretch the address or the file control past the sheet, or pin the reading to the left edge of a wide window.

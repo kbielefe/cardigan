@@ -26,6 +26,7 @@ def run(
     on_stage: OnStage | None = None,
     on_piece_ready: OnPieceReady | None = None,
     on_section_ready: OnSectionReady | None = None,
+    on_named: Callable[[str], None] | None = None,
     on_delta: OnDelta | None = None,
 ) -> Project:
     if type(reading) is not str or not reading.strip():
@@ -43,7 +44,9 @@ def run(
 
     try:
         emit("metadata")
-        run_metadata(db, project_id, reading, complete, on_delta=on_delta)
+        name = run_metadata(db, project_id, reading, complete, on_delta=on_delta)
+        if name and on_named is not None:
+            on_named(name)
 
         emit("sections")
         sections = run_split(db, project_id, reading, complete, on_delta=on_delta)

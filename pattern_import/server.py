@@ -112,6 +112,9 @@ class Handler(BaseHTTPRequestHandler):
         def on_section_ready(info: dict) -> None:
             self._sse({"type": "section_ready", **info})
 
+        def on_named(name: str) -> None:
+            self._sse({"type": "named", "name": name})
+
         db = connect(self.server.db_path)
         try:
             project = parse_reading(
@@ -122,6 +125,7 @@ class Handler(BaseHTTPRequestHandler):
                 on_stage=on_stage,
                 on_piece_ready=on_piece_ready,
                 on_section_ready=on_section_ready,
+                on_named=on_named,
                 on_delta=on_delta,
             )
         except ParseFailure as exc:
@@ -133,6 +137,7 @@ class Handler(BaseHTTPRequestHandler):
             {
                 "type": "done",
                 "ok": True,
+                "name": project.name,
                 "sections": [section.text for section in project.sections],
                 "readings": [_reading_payload(section) for section in project.sections],
                 "pieces": [

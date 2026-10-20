@@ -193,16 +193,46 @@ main {
 
 #pieces {
   max-width: 68ch;
-  margin-top: 16px;
 }
 
-#pieces p {
+#pieces h2 {
+  margin: 0 0 16px;
+  font: 650 18px/1.45 system-ui, sans-serif;
+}
+
+#pieces ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+#pieces li {
   margin: 0 0 12px;
 }
 
+#pieces li:last-child {
+  margin-bottom: 0;
+}
+
+#pieces ul ul {
+  margin-top: 8px;
+  padding-left: 16px;
+}
+
+#pieces .branch {
+  margin: 0;
+  overflow-wrap: break-word;
+}
+
+#pieces .aside,
 #pieces .unparsed {
   font-size: 16px;
   line-height: 1.4;
+  color: var(--quiet);
+}
+
+#pieces .aside::before {
+  content: " · ";
 }
 
 textarea[readonly] {

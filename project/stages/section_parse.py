@@ -75,6 +75,10 @@ def run_section_parse(
                     "heading": saved.heading,
                     "copies": saved.copies,
                     "procedure": saved.procedure,
+                    "size_names": list(saved.size_names),
+                    "glossary": [
+                        {"abbr": item.abbr, "expansion": item.expansion} for item in saved.glossary
+                    ],
                 }
             )
     return tuple(stored)

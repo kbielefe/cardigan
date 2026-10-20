@@ -719,6 +719,13 @@ class AcceptTests(unittest.TestCase):
         self.assertIn("Splitting the pattern…", script)
         self.assertIn("Reading each section…", script)
         self.assertIn("Building passes…", script)
+        self.assertIn('id="tree-live"', page)
+        self.assertIn("section_ready", script)
+        self.assertIn("piece_ready", script)
+        self.assertIn("takeNamed", script)
+        self.assertIn("renderTree", script)
+        self.assertIn("1 pass", script)
+        self.assertIn("make ", script)
 
     def test_accept_on_the_wrap_sweater(self):
         reading = _reading()
@@ -793,10 +800,20 @@ class AcceptTests(unittest.TestCase):
         self.assertEqual(events[-1]["type"], "done")
         names = [event["name"] for event in events if event["type"] == "stage"]
         self.assertEqual(names, ["bootstrap", "metadata", "sections", "section", "passes"])
+        named_at = next(i for i, event in enumerate(events) if event["type"] == "named")
+        metadata_at = next(
+            i for i, event in enumerate(events) if event["type"] == "stage" and event["name"] == "metadata"
+        )
+        self.assertLess(metadata_at, named_at)
+        self.assertEqual(events[named_at], {"type": "named", "name": "Wrap Sweater Scarf"})
+        self.assertEqual(events[-1]["name"], "Wrap Sweater Scarf")
         ready = [event for event in events if event["type"] == "section_ready"]
         self.assertGreaterEqual(len(ready), 2)
+        self.assertLess(named_at, events.index(ready[0]))
         self.assertEqual(ready[1]["kind"], "piece")
         self.assertEqual(ready[1]["heading"], "Body")
+        self.assertIn("size_names", ready[0])
+        self.assertIn("glossary", ready[0])
         pieces = [event for event in events if event["type"] == "piece_ready"]
         self.assertEqual(pieces[0]["piece"], "Body")
         self.assertGreaterEqual(pieces[0]["pass_count"], 1)
