@@ -120,18 +120,18 @@ components:
 
 **Creative North Star: "Pattern leaflet"**
 
-Cardigan's first visual system is a pattern leaflet: warm paper and a madder bar. It is read beside the machine, so the sheet is flat, square, and immediate. Nothing lifts, nothing rounds, and nothing moves.
+Cardigan's first visual system is a pattern leaflet: warm paper and a madder bar. It is read beside the machine, so the sheet is flat, square, and immediate. Nothing lifts and nothing rounds. The only motion is the carriage on the parse rule.
 
 The madder rectangle is the form. The bar is a solid one. The tabs and the actions are thin ones, edged with a 1px madder rule. The reading is not a rectangle of chrome. It sits on the paper in the body size.
 
-This surface ships the platform sans (system-ui, sans-serif), because the leaflet brief asked for the face the browser already has. That stack is a fact of this page. It is not the typeface every future Cardigan surface must use. The page has no logo and no motion. A picture in the reading comes from the pattern. The leaflet itself adds none.
+This surface ships the platform sans (system-ui, sans-serif), because the leaflet brief asked for the face the browser already has. That stack is a fact of this page. It is not the typeface every future Cardigan surface must use. The page has no logo. A picture in the reading comes from the pattern. The leaflet itself adds none. Motion is one place: while a reading is parsing, a madder carriage crosses the current span of a ruled bed in the footer.
 
 **Key Characteristics:**
 
 - Warm paper, ink, and a single madder accent
 - Square rectangles and 1px rules, with no shadow
 - A full-bleed bar, then one centered sheet: intake, scrolling reading, and footer
-- Platform sans on this surface, with no motion. The leaflet adds no imagery of its own
+- Platform sans on this surface. The leaflet adds no imagery of its own. The only motion is the carriage crossing the parse rule
 
 ## Colors
 
@@ -231,7 +231,17 @@ A joined row inside one 1px madder rectangle. Each tab is square, transparent, m
 - **File:** The same edge and padding, quiet text, at least 38px tall. Focus inside the control draws the 2px madder ring.
 - **Reading:** No border, no fill, no padding, body type, line-height 1.45, madder caret, measure 68ch. It does not drag-resize. It grows with the text instead of scrolling inside the field. Notices above it use the body size, the same measure, and 12px under them. Pictures from the pattern sit in the reading, unboxed, on the paper, no wider than the measure. Pictures that share a vertical band sit in one row, each at its share of that width.
 
-The source line under the intake is quiet, label size, line-height 1.4. The settled line in the footer is the note role, in ink, with 12px under it before the actions. It is a live status: parsing, the parse error, or that the reading is parsed. Fetch errors stay in the notice above the reading.
+The source line under the intake is quiet, label size, line-height 1.4. The settled line in the footer is the note role, in ink, with 12px under it before the parse rule. It is a live status: parsing, the parse error, or that the reading is parsed. Fetch errors stay in the notice above the reading.
+
+### Parse rule
+
+A 10px rule under the settled line, shown only while a reading is parsing, after it has parsed, or after parsing has failed. The track is the tan rule. 1px paper gaps divide it into the pipeline's spans: starting, naming, splitting, reading each section, and building passes. A reading that includes a chart adds a sixth span. Spans already finished are madder. The span in progress is the inset wash. A madder carriage, 40% of that span, crosses it at constant speed. It is clipped at both ends, so the repeat does not jump. The lane moves to the next span, and the finished span fills, over 320ms with a decelerating arrival. When the reading is parsed, the rule fills and the carriage leaves. When parsing fails, the carriage leaves and the unfinished span stays the inset wash.
+
+The carriage runs only while parsing. It pauses while the document is hidden. Under `prefers-reduced-motion`, the carriage does not travel and the fills do not slide. The current span keeps a 1px madder edge, so the place is still marked. The sentence stays the live status. The rule is hidden from assistive technology.
+
+Tabs, buttons, hover, and the reading still change with no transition.
+
+**The Carriage Rule.** Motion on this surface is the carriage crossing the current span of the parse rule. Nothing else moves.
 
 ### Bar
 
@@ -252,6 +262,6 @@ A 64px madder band, full bleed. The wordmark is in the sheet, padded 0 32px, and
 - **Don't** add a shadow, a blur, or a second accent.
 - **Don't** round the bar, the tabs, the fields, or the actions.
 - **Don't** box the reading, or give it the field's white fill and tan rule.
-- **Don't** animate state changes. This surface has no transition.
+- **Don't** animate state changes outside the parse rule. Tabs, buttons, hover, and the reading have no transition.
 - **Don't** treat the platform sans as the face every future Cardigan surface must use. It is the face this leaflet ships.
 - **Don't** stretch the address or the file control past the sheet, or pin the reading to the left edge of a wide window.

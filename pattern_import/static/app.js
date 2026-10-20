@@ -16,6 +16,7 @@ const STAGE_LABELS = {
   passes: "Building passes…",
   charts: "Reading charts…",
 };
+const PIPELINE = ["bootstrap", "metadata", "sections", "section", "passes"];
 
 const tabs = [...document.querySelectorAll("[role='tab']")];
 const urlPanel = document.getElementById("url-panel");
@@ -31,6 +32,7 @@ const accept = document.getElementById("accept");
 const discard = document.getElementById("discard");
 const another = document.getElementById("another");
 const settled = document.getElementById("settled");
+const bed = document.getElementById("bed");
 const urlInput = document.getElementById("url");
 const fileInput = document.getElementById("file");
 const fileLabel = document.getElementById("file-label");
@@ -40,6 +42,7 @@ let phase = "empty";
 let token = 0;
 let parts = null;
 let parseMessage = "";
+let stageIndex = 0;
 
 tabs.forEach((button, index) => {
   button.addEventListener("click", () => selectTab(nameOf(button)));
@@ -112,6 +115,7 @@ accept.addEventListener("click", () => {
   const mine = ++token;
   phase = "parsing";
   parseMessage = "";
+  stageIndex = 0;
   piecesEl.replaceChildren();
   render();
   fetch("/accept", {
@@ -158,6 +162,8 @@ async function readAccept(response, mine) {
         continue;
       }
       if (event.type === "stage") {
+        const index = stageNames().indexOf(event.name);
+        if (index >= 0) stageIndex = index;
         parseMessage = STAGE_LABELS[event.name] || PARSE_WORKING;
         render();
         continue;
@@ -577,6 +583,7 @@ function reset() {
   phase = "empty";
   parts = null;
   parseMessage = "";
+  stageIndex = 0;
   partsEl.replaceChildren();
   piecesEl.replaceChildren();
   source.textContent = "";
@@ -639,6 +646,43 @@ function render() {
   another.hidden = phase !== "parsed" && phase !== "parse-failed";
   accept.disabled = phase === "parsing" || (phase !== "parse-failed" && (phase !== "ready" || !hasInput()));
   discard.disabled = phase === "empty";
+  renderBed();
 }
+
+function stageNames() {
+  const names = PIPELINE.slice();
+  if (frozenCharts().length) names.push("charts");
+  return names;
+}
+
+function renderBed() {
+  const show = phase === "parsing" || phase === "parsed" || phase === "parse-failed";
+  bed.hidden = !show;
+  if (!show) return;
+  const n = stageNames().length;
+  const done = phase === "parsed" ? n : stageIndex;
+  const index = Math.min(stageIndex, n - 1);
+  bed.style.setProperty("--n", String(n));
+  bed.style.setProperty("--index", String(index));
+  bed.classList.toggle("is-live", phase === "parsing");
+  bed.classList.toggle("is-done", phase === "parsed");
+  bed.classList.toggle("is-stopped", phase === "parse-failed");
+  bed.classList.toggle("is-away", document.hidden);
+  const row = bed.querySelector(".bed-spans");
+  if (row.childElementCount !== n) {
+    row.replaceChildren();
+    for (let i = 0; i < n; i += 1) row.append(document.createElement("span"));
+  }
+  [...row.children].forEach((span, i) => {
+    span.className = "bed-span";
+    if (i < done) span.classList.add("is-done");
+    else if (i === index && phase !== "parsed") span.classList.add("is-current");
+  });
+}
+
+document.addEventListener("visibilitychange", () => {
+  if (bed.hidden) return;
+  bed.classList.toggle("is-away", document.hidden);
+});
 
 render();
