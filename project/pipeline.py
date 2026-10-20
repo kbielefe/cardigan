@@ -11,6 +11,7 @@ from project.parse import ParseFailure
 from project.stages import run_metadata
 from project.stages.call import OnPieceReady, OnSectionReady, OnStage, StageComplete
 from project.stages.section_parse import run_section_parse
+from project.stages.section_passes import run_section_passes
 from project.stages.split import run_split
 from project.store import create_project, load_project
 
@@ -47,12 +48,23 @@ def run(
         sections = run_split(db, project_id, reading, complete, on_delta=on_delta)
 
         emit("section")
-        run_section_parse(
+        sections = run_section_parse(
             db,
             sections,
             complete,
             on_delta=on_delta,
             on_section_ready=on_section_ready,
+        )
+
+        emit("passes")
+        run_section_passes(
+            db,
+            project_id,
+            reading,
+            sections,
+            complete,
+            on_delta=on_delta,
+            on_piece_ready=on_piece_ready,
         )
 
     except ParseFailure:

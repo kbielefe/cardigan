@@ -27,6 +27,7 @@ from project import (
     replace_pieces,
     replace_size_passes,
     save_abbreviations,
+    save_piece,
     save_project,
     set_project_name,
 )
@@ -56,6 +57,28 @@ class StoreTests(unittest.TestCase):
 
     def tearDown(self):
         self.db.close()
+
+    def test_save_piece_appends(self):
+        project = create_project(self.db, READING)
+        first = save_piece(
+            self.db,
+            project.id,
+            Piece(name="Body", sizes=(Size(name="XS-M", passes=(Pass(kind="trip", cite_start=0, cite_end=4),)),)),
+        )
+        save_piece(
+            self.db,
+            project.id,
+            Piece(
+                name="Sleeve",
+                copies=2,
+                sizes=(Size(name="one", passes=(Pass(kind="trip", cite_start=0, cite_end=4),)),),
+            ),
+        )
+        loaded = load_project(self.db, project.id)
+        self.assertEqual([piece.name for piece in loaded.pieces], ["Body", "Sleeve"])
+        self.assertEqual(loaded.pieces[0].id, first.id)
+        self.assertEqual(loaded.pieces[1].copies, 2)
+        self.assertEqual(loaded.reading[loaded.pieces[0].sizes[0].passes[0].cite_start : 4], "Writ")
 
     def test_wrap_body_round_trips(self):
         cast_on, knit_two, tuck, knit_three = (

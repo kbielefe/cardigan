@@ -333,6 +333,20 @@ def save_section_reading(db: sqlite3.Connection, section: Section) -> Section:
     return replace(section, size_names=size_names, glossary=glossary)
 
 
+def save_piece(db: sqlite3.Connection, project_id: int, piece: Piece) -> Piece:
+    """Append one piece and its passes. Earlier pieces stay."""
+    prepare(db)
+    _fresh_pieces((piece,))
+    with db:
+        if db.execute("SELECT id FROM project WHERE id = ?", (project_id,)).fetchone() is None:
+            raise LookupError(f"no project {project_id}")
+        row = db.execute(
+            "SELECT COALESCE(MAX(position) + 1, 0) FROM piece WHERE project_id = ?",
+            (project_id,),
+        ).fetchone()
+        return _insert_piece(db, project_id, row[0], piece)
+
+
 def replace_pieces(db: sqlite3.Connection, project_id: int, pieces: tuple[Piece, ...]) -> tuple[Piece, ...]:
     prepare(db)
     _fresh_pieces(pieces)
