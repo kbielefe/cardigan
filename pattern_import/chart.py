@@ -1,7 +1,7 @@
 """Turn a knitting chart image into the color of each square.
 
 The grid keeps the picture's row order, top to bottom. A fairisle chart is
-read from the bottom when the passes are made. That reading comes later.
+read from the bottom when the passes are made.
 """
 
 from __future__ import annotations

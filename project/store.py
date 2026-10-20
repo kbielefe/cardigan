@@ -101,7 +101,7 @@ CREATE TABLE IF NOT EXISTS pass (
     cite_end INTEGER NOT NULL CHECK (cite_end >= cite_start),
     open_point TEXT CHECK (open_point IN (
         'shaping_moment', 'number_kind', 'extra_needle_side', 'row_or_trips',
-        'carriage_end', 'needle_letter', 'unknown_counter'
+        'carriage_end', 'needle_letter', 'unknown_counter', 'chart_edge'
     )),
     mark TEXT CHECK (mark IS NULL OR length(trim(mark)) > 0),
     UNIQUE (size_id, position),
@@ -251,6 +251,73 @@ def _migrate(db: sqlite3.Connection) -> None:
         db.execute("ALTER TABLE section ADD COLUMN heading TEXT")
         db.execute("ALTER TABLE section ADD COLUMN copies INTEGER")
         db.execute("ALTER TABLE section ADD COLUMN procedure INTEGER")
+    _widen_open_point(db)
+
+
+_PASS_TRIGGERS = """
+CREATE TRIGGER IF NOT EXISTS pass_cite_in_reading
+BEFORE INSERT ON pass
+FOR EACH ROW
+WHEN NEW.cite_end > (
+    SELECT length(project.reading)
+    FROM size
+    JOIN piece ON piece.id = size.piece_id
+    JOIN project ON project.id = piece.project_id
+    WHERE size.id = NEW.size_id
+)
+BEGIN
+    SELECT RAISE(ABORT, 'citation is outside the reading');
+END;
+
+CREATE TRIGGER IF NOT EXISTS selection_open_side
+BEFORE INSERT ON needle_selection
+FOR EACH ROW
+WHEN NEW.side IS NOT NULL
+    AND (SELECT open_point FROM pass WHERE id = NEW.pass_id) = 'extra_needle_side'
+BEGIN
+    SELECT RAISE(ABORT, 'the extra needle side is open');
+END;
+
+CREATE TRIGGER IF NOT EXISTS repeat_inside_passes
+BEFORE INSERT ON pass_repeat
+FOR EACH ROW
+WHEN NEW.last_pass_position >= (SELECT count(*) FROM pass WHERE size_id = NEW.size_id)
+BEGIN
+    SELECT RAISE(ABORT, 'repeat is outside the passes');
+END;
+"""
+
+
+def _widen_open_point(db: sqlite3.Connection) -> None:
+    """Let an older pass table store chart_edge. New databases already can."""
+    row = db.execute("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'pass'").fetchone()
+    if row is None or not row[0] or "chart_edge" in row[0] or "unknown_counter" not in row[0]:
+        return
+    created = row[0].replace("'unknown_counter'", "'unknown_counter', 'chart_edge'", 1)
+    for old in ("CREATE TABLE IF NOT EXISTS pass", 'CREATE TABLE "pass"', "CREATE TABLE pass"):
+        if old in created:
+            created = created.replace(old, "CREATE TABLE pass_new", 1)
+            break
+    else:
+        return
+    db.execute("PRAGMA foreign_keys = OFF")
+    try:
+        db.execute("BEGIN")
+        for name in ("selection_open_side", "repeat_inside_passes", "pass_cite_in_reading"):
+            db.execute(f"DROP TRIGGER IF EXISTS {name}")
+        db.execute(created)
+        names = [info[1] for info in db.execute("PRAGMA table_info(pass)")]
+        quoted = ", ".join(names)
+        db.execute(f"INSERT INTO pass_new ({quoted}) SELECT {quoted} FROM pass")
+        db.execute("DROP TABLE pass")
+        db.execute("ALTER TABLE pass_new RENAME TO pass")
+        db.execute("COMMIT")
+    except Exception:
+        db.execute("ROLLBACK")
+        raise
+    finally:
+        db.execute("PRAGMA foreign_keys = ON")
+    db.executescript(_PASS_TRIGGERS)
 
 
 def create_project(db: sqlite3.Connection, reading: str) -> Project:

@@ -10,6 +10,7 @@ from project.model import Project
 from project.parse import ParseFailure
 from project.stages import run_metadata
 from project.stages.call import OnPieceReady, OnSectionReady, OnStage, StageComplete
+from project.stages.chart_passes import run_chart_passes
 from project.stages.section_parse import run_section_parse
 from project.stages.section_passes import run_section_passes
 from project.stages.split import run_split
@@ -57,7 +58,7 @@ def run(
         )
 
         emit("passes")
-        run_section_passes(
+        pieces = run_section_passes(
             db,
             project_id,
             reading,
@@ -66,6 +67,19 @@ def run(
             on_delta=on_delta,
             on_piece_ready=on_piece_ready,
         )
+
+        if charts:
+            emit("charts")
+            run_chart_passes(
+                db,
+                reading,
+                sections,
+                pieces,
+                charts,
+                complete,
+                on_delta=on_delta,
+                on_piece_ready=on_piece_ready,
+            )
 
     except ParseFailure:
         raise

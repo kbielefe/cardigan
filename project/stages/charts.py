@@ -1,4 +1,4 @@
-"""Chart grids to passes stage."""
+"""Retired chart stage. Accept reads a grid in chart_passes.py."""
 
 from __future__ import annotations
 

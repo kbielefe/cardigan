@@ -30,6 +30,7 @@ OPEN_POINTS = (
     "carriage_end",
     "needle_letter",
     "unknown_counter",
+    "chart_edge",
 )
 SETTINGS = ("plain", "slip", "hold", "knit_holding", "tuck", "intarsia")
 SCOPES = ("left", "right", "both")

@@ -33,6 +33,17 @@ def _line(reading: str, start: str) -> str:
     return reading[at:end].strip()
 
 
+def _method(procedure: bool) -> dict:
+    return {
+        "kind": "method",
+        "heading": None,
+        "copies": None,
+        "procedure": procedure,
+        "size_names": [],
+        "glossary": [],
+    }
+
+
 def _pass(kind: str, cite: str, count: int = 1, **extra) -> dict:
     body = {
         "kind": kind,
@@ -209,6 +220,8 @@ def _stage_complete(reading: str, wrap: dict, *, fail_at: str | None = None):
             return {"passes": [], "repeats": []}
         if schema_name == "charts":
             return {"piece": "Body", "size": "XS-M", "passes": [], "repeats": []}
+        if schema_name == "chart_passes":
+            return {"passes": [], "repeats": []}
         if schema_name == "section":
             return _section_reading(content)
         if schema_name == "section_passes":
@@ -457,6 +470,142 @@ class ParseTests(unittest.TestCase):
         self.assertEqual(stored.pieces[0].copies, 1)
         self.assertEqual(stored.pieces[0].sizes[0].name, "one")
         self.assertEqual(stored.pieces[0].sizes[0].passes[0].carriage_end, "left")
+
+    def test_chart_passes_append_after_the_steps(self):
+        reading = "Read the chart from the bottom.\n\nKnit 1 row to the left."
+        stages = []
+
+        def respond(content, **kwargs):
+            name = kwargs.get("schema_name")
+            if name == "metadata":
+                return {"name": "Fairisle"}
+            if name == "sections":
+                return {"sections": [reading]}
+            if name == "section":
+                return _method(True)
+            if name == "section_passes":
+                return {
+                    "sizes": [
+                        {"name": "one", "passes": [_pass("trip", "Knit 1 row to the left.", carriage_end="left")], "repeats": []}
+                    ]
+                }
+            if name == "chart_passes":
+                self.assertIn("row 0: 0 1", content)
+                self.assertIn("Read the chart from the bottom.", content)
+                return {
+                    "passes": [
+                        _pass(
+                            "trip",
+                            "Knit 1 row to the left.",
+                            carriage_end="left",
+                            open_point="chart_edge",
+                            selections=[{"role": "holding", "method": "stitch_count", "count": 1}],
+                            yarns=[{"place": "main", "name": "A"}],
+                        )
+                    ],
+                    "repeats": [],
+                }
+            raise AssertionError(name)
+
+        stored = parse_reading(
+            reading,
+            respond,
+            self.db,
+            charts=[{"grid": [[0, 1]], "colors": {"0": "#000000", "1": "#FFFFFF"}, "labels": ""}],
+            on_stage=stages.append,
+        )
+        self.assertEqual(stages, ["bootstrap", "metadata", "sections", "section", "passes", "charts"])
+        passes = stored.pieces[0].sizes[0].passes
+        self.assertEqual(len(passes), 2)
+        added = passes[1]
+        self.assertEqual(added.open_point, "chart_edge")
+        self.assertEqual(added.selections[0].count, 1)
+        self.assertEqual(added.yarns[0].name, "A")
+        self.assertEqual(stored.reading[added.cite_start : added.cite_end], "Knit 1 row to the left.")
+        self.assertEqual(load_project(self.db, stored.id), stored)
+
+    def test_a_chart_the_sections_do_not_explain_adds_nothing(self):
+        reading = "Knit 1 row to the left."
+
+        def respond(content, **kwargs):
+            name = kwargs.get("schema_name")
+            if name == "metadata":
+                return {"name": "Rows"}
+            if name == "sections":
+                return {"sections": [reading]}
+            if name == "section":
+                return _method(True)
+            if name == "section_passes":
+                return {"sizes": [{"name": "one", "passes": [_pass("trip", reading, carriage_end="left")], "repeats": []}]}
+            if name == "chart_passes":
+                raise AssertionError(name)
+            raise AssertionError(name)
+
+        stored = parse_reading(
+            reading,
+            respond,
+            self.db,
+            charts=[{"grid": [[0]], "colors": {"0": "#000000"}, "labels": ""}],
+        )
+        self.assertEqual(len(stored.pieces[0].sizes[0].passes), 1)
+
+    def test_a_bad_chart_cite_keeps_the_steps(self):
+        reading = "Read the chart from the bottom.\n\nKnit 1 row to the left."
+
+        def respond(content, **kwargs):
+            name = kwargs.get("schema_name")
+            if name == "metadata":
+                return {"name": "Fairisle"}
+            if name == "sections":
+                return {"sections": [reading]}
+            if name == "section":
+                return _method(True)
+            if name == "section_passes":
+                return {"sizes": [{"name": "one", "passes": [_pass("trip", "Knit 1 row to the left.")], "repeats": []}]}
+            if name == "chart_passes":
+                return {"passes": [_pass("trip", "missing from the reading")], "repeats": []}
+            raise AssertionError(name)
+
+        with self.assertRaises(ParseFailure) as caught:
+            parse_reading(
+                reading,
+                respond,
+                self.db,
+                charts=[{"grid": [[0]], "colors": {"0": "#000000"}, "labels": ""}],
+            )
+        self.assertEqual(str(caught.exception), "The reading did not parse.")
+        stored = load_project(self.db, 1)
+        self.assertEqual(len(stored.pieces[0].sizes[0].passes), 1)
+
+    def test_two_chart_methods_are_not_guessed(self):
+        parts = [
+            "Manual chart.\nKnit 1 row to the left.\n\n",
+            "Studio chart.\nKnit 1 row to the left.",
+        ]
+        reading = "".join(parts)
+
+        def respond(content, **kwargs):
+            name = kwargs.get("schema_name")
+            if name == "metadata":
+                return {"name": "Fairisle"}
+            if name == "sections":
+                return {"sections": parts}
+            if name == "section":
+                return _method(True)
+            if name == "section_passes":
+                return {"sizes": [{"name": "one", "passes": [_pass("trip", "Knit 1 row to the left.")], "repeats": []}]}
+            if name == "chart_passes":
+                raise AssertionError(name)
+            raise AssertionError(name)
+
+        stored = parse_reading(
+            reading,
+            respond,
+            self.db,
+            charts=[{"grid": [[0, 1]], "colors": {"0": "#000000", "1": "#FFFFFF"}, "labels": ""}],
+        )
+        self.assertEqual(len(stored.pieces), 2)
+        self.assertTrue(all(len(piece.sizes[0].passes) == 1 for piece in stored.pieces))
 
     def test_a_failed_pass_keeps_the_section_readings(self):
         reading = "Body\nKnit 2 rows."

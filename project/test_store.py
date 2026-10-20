@@ -7,6 +7,7 @@ import sqlite3
 import unittest
 from dataclasses import asdict
 
+from project.store import SCHEMA, _widen_open_point
 from project import (
     Abbreviation,
     CarriageSetting,
@@ -366,6 +367,61 @@ class StoreTests(unittest.TestCase):
             columns = self.db.execute(f'PRAGMA table_info("{table["name"]}")')
             for column in columns:
                 self.assertNotIn("machine", column["name"].lower())
+
+
+    def test_chart_edge_round_trips(self):
+        project = create_project(self.db, "Knit.")
+        save_piece(
+            self.db,
+            project.id,
+            Piece(
+                name="Method",
+                sizes=(
+                    Size(
+                        name="one",
+                        passes=(
+                            Pass(
+                                kind="trip",
+                                cite_start=0,
+                                cite_end=5,
+                                open_point="chart_edge",
+                                selections=(Selection(role="holding", method="stitch_count", count=2),),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        )
+        loaded = load_project(self.db, project.id)
+        step = loaded.pieces[0].sizes[0].passes[0]
+        self.assertEqual(step.open_point, "chart_edge")
+        self.assertEqual(step.selections[0].count, 2)
+
+    def test_an_older_pass_table_stores_chart_edge(self):
+        db = sqlite3.connect(":memory:")
+        db.row_factory = sqlite3.Row
+        db.execute("PRAGMA foreign_keys = ON")
+        old = SCHEMA.replace(", 'chart_edge'", "")
+        self.assertNotIn("chart_edge", old)
+        db.executescript(old)
+        db.execute("INSERT INTO project (reading) VALUES ('Knit.')")
+        db.execute(
+            "INSERT INTO piece (project_id, position, name, copies, parsed) VALUES (1, 0, 'Method', 1, 1)"
+        )
+        db.execute("INSERT INTO size (piece_id, position, name) VALUES (1, 0, 'one')")
+        db.execute(
+            "INSERT INTO pass (size_id, position, kind, count, cite_start, cite_end) VALUES (1, 0, 'trip', 1, 0, 5)"
+        )
+        db.commit()
+        _widen_open_point(db)
+        db.execute(
+            """
+            INSERT INTO pass (size_id, position, kind, count, cite_start, cite_end, open_point)
+            VALUES (1, 1, 'trip', 1, 0, 5, 'chart_edge')
+            """
+        )
+        self.assertEqual(db.execute("SELECT open_point FROM pass WHERE position = 1").fetchone()[0], "chart_edge")
+        db.close()
 
 
 def _structured(project: Project) -> str:

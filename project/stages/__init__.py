@@ -1,5 +1,6 @@
 """Staged parse steps: schema and prompts per stage."""
 
+from project.stages.chart_passes import run_chart_passes
 from project.stages.charts import run_charts
 from project.stages.metadata import run_metadata
 from project.stages.passes import run_passes
@@ -11,6 +12,7 @@ from project.stages.sizes import run_sizes
 from project.stages.vocabulary import run_vocabulary
 
 __all__ = [
+    "run_chart_passes",
     "run_charts",
     "run_metadata",
     "run_passes",
