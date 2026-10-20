@@ -85,12 +85,10 @@ class Handler(BaseHTTPRequestHandler):
             payload = json.loads(body)
             reading = payload["reading"]
         except (json.JSONDecodeError, KeyError, TypeError):
-            self._sse_start()
-            self._sse({"type": "error", "ok": False, "message": "The reading did not parse."})
+            self._fail("The reading did not parse.")
             return
         if type(reading) is not str:
-            self._sse_start()
-            self._sse({"type": "error", "ok": False, "message": "The reading did not parse."})
+            self._fail("The reading did not parse.")
             return
         charts = payload.get("charts") if type(payload) is dict else None
         if charts is not None and type(charts) is not list:
@@ -129,10 +127,12 @@ class Handler(BaseHTTPRequestHandler):
                 on_delta=on_delta,
             )
         except ParseFailure as exc:
+            self._mark("error", str(exc))
             self._sse({"type": "error", "ok": False, "message": str(exc)})
             return
         finally:
             db.close()
+        self._mark("done")
         self._sse(
             {
                 "type": "done",
@@ -151,6 +151,19 @@ class Handler(BaseHTTPRequestHandler):
                 ],
             }
         )
+
+    def _mark(self, outcome: str, message: str | None = None) -> None:
+        status = getattr(self, "_otel_status", None)
+        if status is None:
+            return
+        status["outcome"] = outcome
+        if message is not None:
+            status["message"] = message
+
+    def _fail(self, message: str) -> None:
+        self._mark("error", message)
+        self._sse_start()
+        self._sse({"type": "error", "ok": False, "message": message})
 
     def _complete(self, on_delta=None):
         if self.server.complete is not None:

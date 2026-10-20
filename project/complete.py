@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+import time
 from collections.abc import Callable
 from pathlib import Path
 from urllib.error import HTTPError, URLError
@@ -153,30 +154,81 @@ def _repeat_item() -> dict:
 def _post(payload: dict, key: str, on_delta: OnDelta | None = None) -> dict:
     outbound = {**payload, "stream": True}
     body = json.dumps(outbound)
-    _log.debug("llm request %s", body)
+    schema_name = _schema_name(payload)
+    effort = payload.get("reasoning_effort")
+    input_characters = _user_characters(payload)
+    _log.debug(
+        "llm request schema=%s effort=%s input_characters=%s",
+        schema_name or "",
+        effort if type(effort) is str else "",
+        input_characters,
+    )
     request = Request(
         URL,
         data=body.encode("utf-8"),
         headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"},
         method="POST",
     )
-    with otel.llm_request(MODEL, URL):
+    metric_labels = {}
+    if schema_name is not None:
+        metric_labels["gen_ai.request.schema_name"] = schema_name
+    if type(effort) is str:
+        metric_labels["gen_ai.request.reasoning_effort"] = effort
+    with otel.llm_request(MODEL, URL, metric_labels) as span:
+        _set_span(span, {"gen_ai.usage.input_characters": input_characters})
+        headers = False
+        started = time.perf_counter()
         try:
             with urlopen(request, timeout=TIMEOUT) as response:
-                content = _read_stream(response, on_delta)
-            _log.debug("llm response %s", content)
+                headers = True
+                _set_span(
+                    span,
+                    {
+                        "llm.stream.headers_received": True,
+                        "llm.stream.ttfb_s": time.perf_counter() - started,
+                    },
+                )
+                read_at = time.perf_counter()
+                try:
+                    content, stats = _read_stream(response, on_delta)
+                finally:
+                    _set_span(span, {"llm.stream.body_s": time.perf_counter() - read_at})
+            _set_span(
+                span,
+                {
+                    "gen_ai.usage.output_characters": len(content),
+                    "gen_ai.usage.reasoning_characters": stats["reasoning_characters"],
+                    "gen_ai.response.done": stats["done"],
+                },
+            )
+            _log.debug(
+                "llm response content_characters=%s reasoning_characters=%s done=%s",
+                len(content),
+                stats["reasoning_characters"],
+                stats["done"],
+            )
+            _require_object(span, content)
             return {"choices": [{"message": {"content": content}}]}
         except HTTPError as exc:
+            _set_span(
+                span,
+                {
+                    "llm.stream.headers_received": True,
+                    "llm.stream.ttfb_s": time.perf_counter() - started,
+                },
+            )
             err_body = ""
             try:
                 err_body = exc.read().decode("utf-8", errors="replace")
             except Exception:
                 pass
-            _log.debug("llm HTTP %s response %s", exc.code, err_body)
+            _log.debug("llm HTTP %s body_characters=%s", exc.code, len(err_body))
             if exc.code in {401, 403}:
                 raise ParseFailure("The model key was refused.") from None
             raise ParseFailure("The model refused the reading.") from None
         except (TimeoutError, URLError) as exc:
+            if not headers:
+                _set_span(span, {"llm.stream.headers_received": False})
             _log.debug("llm transport error: %s", exc)
             raise ParseFailure("The model did not answer.") from None
         except json.JSONDecodeError as exc:
@@ -184,8 +236,10 @@ def _post(payload: dict, key: str, on_delta: OnDelta | None = None) -> dict:
             raise ParseFailure("The model did not answer.") from None
 
 
-def _read_stream(response, on_delta: OnDelta | None) -> str:
+def _read_stream(response, on_delta: OnDelta | None) -> tuple[str, dict]:
     parts: list[str] = []
+    reasoning_characters = 0
+    done = False
     for raw in response:
         line = raw.decode("utf-8") if isinstance(raw, bytes) else raw
         line = line.strip()
@@ -193,6 +247,7 @@ def _read_stream(response, on_delta: OnDelta | None) -> str:
             continue
         data = line[5:].strip()
         if data == "[DONE]":
+            done = True
             break
         chunk = json.loads(data)
         try:
@@ -204,9 +259,58 @@ def _read_stream(response, on_delta: OnDelta | None) -> str:
             if type(text) is str and text:
                 if key == "content":
                     parts.append(text)
+                else:
+                    reasoning_characters += len(text)
                 if on_delta is not None:
                     on_delta(text)
-    return "".join(parts)
+    return "".join(parts), {"reasoning_characters": reasoning_characters, "done": done}
+
+
+def _schema_name(payload: dict) -> str | None:
+    response_format = payload.get("response_format")
+    if type(response_format) is not dict:
+        return None
+    schema = response_format.get("json_schema")
+    if type(schema) is not dict:
+        return None
+    name = schema.get("name")
+    if type(name) is not str or not name:
+        return None
+    return name
+
+
+def _user_characters(payload: dict) -> int:
+    messages = payload.get("messages")
+    if type(messages) is not list:
+        return 0
+    total = 0
+    for message in messages:
+        if type(message) is not dict or message.get("role") != "user":
+            continue
+        content = message.get("content")
+        if type(content) is str:
+            total += len(content)
+    return total
+
+
+def _set_span(span, attributes: dict) -> None:
+    if span is None:
+        return
+    span.set_attributes(attributes)
+
+
+def _require_object(span, content: str) -> None:
+    """Record whether the assembled model body is a JSON object. Raises ParseFailure."""
+    try:
+        parsed = json.loads(content)
+    except json.JSONDecodeError as exc:
+        _set_span(span, {"gen_ai.response.json_valid": False})
+        _log.debug("llm JSON error: %s", exc)
+        raise ParseFailure("The reading did not parse.") from exc
+    if type(parsed) is not dict:
+        _set_span(span, {"gen_ai.response.json_valid": False})
+        raise ParseFailure("The reading did not parse.")
+    _set_span(span, {"gen_ai.response.json_valid": True})
 
 
 def _enum(values: tuple[str, ...]) -> dict:

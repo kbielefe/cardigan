@@ -12,7 +12,7 @@ OpenTelemetry `.env` keys (standard names):
 - `OTEL_RESOURCE_ATTRIBUTES` — e.g. `deployment.environment=dev`
 - `OTEL_TRACES_SAMPLER` — defaults to `parentbased_always_on` (100%); use `parentbased_traceidratio` with `OTEL_TRACES_SAMPLER_ARG` (e.g. `0.1`) to sample
 
-What is instrumented: inbound HTTP, outbound urllib (pattern fetch and LLM), sqlite3, chart reads, plus LLM-specific spans/metrics on model calls.
+What is instrumented: inbound HTTP (Accept records the SSE outcome on the span, the log line, and the request counter), one span per Accept stage, outbound urllib (pattern fetch and LLM), sqlite3, and chart reads. Each model call records its schema, effort, stream timing, character counts, and whether the body parsed. The pattern text stays out of the logs.
 
 ## Run
 
