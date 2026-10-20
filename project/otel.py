@@ -273,46 +273,63 @@ def http_request(method: str, path: str) -> Iterator:
         finally:
             code = int(status["code"])
             span.set_attribute(HTTP_RESPONSE_STATUS_CODE, code)
-            if code >= 500:
-                span.set_status(Status(StatusCode.ERROR))
             elapsed = time.perf_counter() - started
+            outcome = status.get("outcome")
+            message = status.get("message")
             labels = {**attributes, HTTP_RESPONSE_STATUS_CODE: code}
+            if type(outcome) is str and outcome:
+                span.set_attribute("accept.outcome", outcome)
+                labels["accept.outcome"] = outcome
+            if outcome == "error":
+                text = message if type(message) is str else ""
+                if text:
+                    span.set_attribute("accept.error.message", text)
+                span.set_status(Status(StatusCode.ERROR, text))
+            elif code >= 500:
+                span.set_status(Status(StatusCode.ERROR))
             if _http_duration is not None:
                 _http_duration.record(elapsed, labels)
             if _http_count is not None:
                 _http_count.add(1, labels)
-            _log.info("%s %s %s %.3fs", method, path, code, elapsed)
+            if outcome == "error" and type(message) is str and message:
+                _log.info("%s %s %s %.3fs %s %s", method, path, code, elapsed, outcome, message)
+            elif type(outcome) is str and outcome:
+                _log.info("%s %s %s %.3fs %s", method, path, code, elapsed, outcome)
+            else:
+                _log.info("%s %s %s %.3fs", method, path, code, elapsed)
 
 
 @contextmanager
-def llm_request(model: str, url: str) -> Iterator[None]:
-    """Trace, log, and measure one outbound LLM call."""
+def llm_request(model: str, url: str, attributes: dict | None = None) -> Iterator:
+    """Trace, log, and measure one outbound LLM call. Yields the span, or None."""
     if not _active:
-        yield
+        yield None
         return
-    attributes = {
+    labels = {
         "gen_ai.operation.name": "chat",
         "gen_ai.provider.name": "xai",
         "gen_ai.request.model": model,
         "server.address": url,
     }
+    if attributes:
+        labels.update(attributes)
     started = time.perf_counter()
     with _tracer.start_as_current_span(f"chat {model}") as span:
-        span.set_attributes(attributes)
+        span.set_attributes(labels)
         try:
-            yield
+            yield span
         except Exception as exc:
             span.record_exception(exc)
             span.set_status(Status(StatusCode.ERROR, str(exc)))
             if _llm_duration is not None:
-                _llm_duration.record(time.perf_counter() - started, attributes)
+                _llm_duration.record(time.perf_counter() - started, labels)
             if _llm_count is not None:
-                _llm_count.add(1, {**attributes, "error.type": type(exc).__name__})
+                _llm_count.add(1, {**labels, "error.type": type(exc).__name__})
             _log.warning("llm %s failed: %s", model, exc)
             raise
         elapsed = time.perf_counter() - started
         if _llm_duration is not None:
-            _llm_duration.record(elapsed, attributes)
+            _llm_duration.record(elapsed, labels)
         if _llm_count is not None:
-            _llm_count.add(1, attributes)
+            _llm_count.add(1, labels)
         _log.info("llm %s %.3fs", model, elapsed)
